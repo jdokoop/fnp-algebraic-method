@@ -1,0 +1,2237 @@
+#include <iostream>
+
+using namespace std;
+
+//----------------------------------
+// Variables
+//----------------------------------
+
+//Save plots?
+bool savePlots = false;
+
+//Compute errors using TEfficiency?
+bool effErrors = true;
+
+//Ratio of etas and pizeros to photons
+float etaPhotonRatio = 1.0;
+float pizeroPhotonRatio = 1.0;
+
+//Which particle variations to group curves by?
+//0: Photon
+//1: Pion
+//2: Eta
+int colorCodeVariation = 0;
+
+//Which VTX layers to use in veto cut?
+//0: All layers
+//1: Only B0, B1
+//2: Only B0
+//3: Only B1
+int vetoLayers = 0;
+
+//Rebin factor
+const int REBINF = 40;
+
+const int NBINSFNP = 9;
+
+//Number of variations for each particle species
+const int NVARETAS = 5;
+const int NVARPIZEROS = 3;
+const int NVARPHOTONS = 4;
+const int NVARETAPIRATIO = 3;
+
+//Total evaluated FNPs
+const int NUMFNPS = NVARPIZEROS * NVARPHOTONS * NVARETAS * NVARETAPIRATIO;
+
+//Eta pi ratio variations
+float etaPiRatio[NVARETAPIRATIO] = {0.96, 1.04, 0.88};
+
+//Spectra
+TF1 *f_photon_spectrum[NVARPHOTONS];
+TF1 *f_pizero_spectrum[NVARPIZEROS];
+TF1 *f_eta_spectrum[NVARETAS];
+
+//Fit to FNP with veto cut applied
+TF1 *f_fnp_fit_with_veto;
+
+//Fit to FNP without veto cut applied
+TF1 *f_fnp_fit_without_veto;
+
+//RMS of all systematic variations on FNP
+float rmsFNP_noveto[NBINSFNP];
+float rmsFNP_noveto_asymm_above[NBINSFNP];
+float rmsFNP_noveto_asymm_below[NBINSFNP];
+
+float rmsFNP_veto[NBINSFNP];
+float rmsFNP_veto_asymm_above[NBINSFNP];
+float rmsFNP_veto_asymm_below[NBINSFNP];
+
+TH1D *h_rms_plus;
+TH1D *h_rms_minus;
+
+//TGraph to draw systematics as polygon
+TGraph *g_systematicsRMS_noveto;
+TGraph *g_systematicsRMS_veto;
+
+//Number of events for each particle species
+TH1D *h_nevents_pizero;
+TH1D *h_nevents_eta;
+TH1D *h_nevents_photon;
+
+//Simulated electrons
+TH1D *h_elec_pT_pizeros[NVARPIZEROS];
+TH1D *h_elec_pT_pizeros_rejected[NVARPIZEROS];
+TH1D *h_elec_pT_pizeros_accepted[NVARPIZEROS];
+
+TH1D *h_elec_pT_photons[NVARPHOTONS];
+TH1D *h_elec_pT_photons_rejected[NVARPHOTONS];
+TH1D *h_elec_pT_photons_accepted[NVARPHOTONS];
+
+TH1D *h_elec_pT_etas[NVARETAS];
+TH1D *h_elec_pT_etas_rejected[NVARETAS];
+TH1D *h_elec_pT_etas_accepted[NVARETAS];
+
+//Dalitz and conversion electrons in simulations that pass conversion veto cut
+TH1D *h_elec_pT_pizeros_conv_accepted[NVARPIZEROS];
+TH1D *h_elec_pT_pizeros_dalitz_accepted[NVARPIZEROS];
+
+TH1D *h_elec_pT_photons_conv_accepted[NVARPHOTONS];
+TH1D *h_elec_pT_photons_dalitz_accepted[NVARPHOTONS];
+
+TH1D *h_elec_pT_etas_conv_accepted[NVARETAS];
+TH1D *h_elec_pT_etas_dalitz_accepted[NVARETAS];
+
+//Inclusive Dalitz and conversion electrons in simulations
+TH1D *h_elec_pT_pizeros_conv[NVARPIZEROS];
+TH1D *h_elec_pT_pizeros_dalitz[NVARPIZEROS];
+
+TH1D *h_elec_pT_photons_conv[NVARPHOTONS];
+TH1D *h_elec_pT_photons_dalitz[NVARPHOTONS];
+
+TH1D *h_elec_pT_etas_conv[NVARETAS];
+TH1D *h_elec_pT_etas_dalitz[NVARETAS];
+
+//Data electrons + hadrons
+TH1D *h_elec_pT;
+TH1D *h_elec_pT_rejected;
+TH1D *h_elec_pT_accepted;
+
+TH1D *h_elec_sw_pT;
+TH1D *h_elec_sw_pT_rejected;
+TH1D *h_elec_sw_pT_accepted;
+
+TH1D *h_hadron_pT;
+TH1D *h_hadron_pT_rejected;
+TH1D *h_hadron_pT_accepted;
+
+//Inclusive electrons (contamination subtracted)
+TH1D *h_elec_pT_inclusive;
+TH1D *h_elec_pT_isolated;
+
+//Survival rate for each particle species
+TH1D *h_survival_photons[NVARPHOTONS];
+TH1D *h_survival_pizeros[NVARPIZEROS];
+TH1D *h_survival_etas[NVARETAS];
+
+//Survival rate for conversion and Dalitz electrons
+//This is defined only for default systematic combination
+TH1D *h_survival_dalitz;
+TH1D *h_survival_conversion;
+
+//Ingredients for FNP calculation
+TH1D *h_conversion_efficiency[NUMFNPS];
+TH1D *h_killed_efficiency;
+
+//RCP -- Ratio of conversion to photonic (Dalitz + Conversion) electrons passing veto cut
+TH1D *h_RCP[NUMFNPS];
+
+//Ratio of electrons from a given photonic source, to electrons from all photonic sources
+TH1D *h_photonic_fraction_pizero[NUMFNPS];
+TH1D *h_photonic_fraction_eta[NUMFNPS];
+TH1D *h_photonic_fraction_photon[NUMFNPS];
+
+//Normalization factors for conversions and Dalitz
+TH1D *h_normalization_conv;
+TH1D *h_normalization_dalitz;
+
+TH1D *h_normalization_pizero;
+TH1D *h_normalization_eta;
+TH1D *h_normalization_photon;
+
+//FNP
+TH1D *h_P[NUMFNPS];
+TH1D *h_NP[NUMFNPS];
+TH1D *h_FNP[NUMFNPS];
+TGraphAsymmErrors *g_eff_FNP[NUMFNPS];
+
+//FNP with conversion veto applied
+TH1D *h_P_conv[NUMFNPS];
+TH1D *h_NP_conv[NUMFNPS];
+TH1D *h_FNP_conv[NUMFNPS];
+TGraphAsymmErrors *g_eff_FNP_conv[NUMFNPS];
+
+//Histos to draw the ratio of all systematic variations to the default FNP
+TH1D *h_FNP_default_ratios[NUMFNPS];
+TH1D *h_FNP_conv_default_ratios[NUMFNPS];
+
+//TBoxes for systematics
+TBox *b_fnp_syst_noveto[NBINSFNP];
+TBox *b_fnp_syst_veto[NBINSFNP];
+
+//Histograms and TGraphs for non-photonic normalization
+TH1D *h_pT_ke3;
+TH1D *h_pT_jpsi;
+TH1D *h_pT_hf;
+TH1D *h_pT_np;
+
+TF1 *f_hf_fit;
+
+TGraphErrors *g_pT_hf_ppg077;
+
+TH1D *h_norm_jpsi;
+TH1D *h_norm_ke3;
+
+//----------------------------------
+// Functions
+//----------------------------------
+
+void formatHistograms(TH1D *& h, string xTitle, string yTitle, string title)
+{
+	h->SetTitle(title.c_str());
+
+	h->GetXaxis()->SetTitleFont(62);
+	h->GetXaxis()->SetLabelFont(62);
+	h->GetXaxis()->SetTitleOffset(1.3);
+	h->GetXaxis()->SetTitle(xTitle.c_str());
+
+	h->GetYaxis()->SetTitleFont(62);
+	h->GetYaxis()->SetLabelFont(62);
+	h->GetYaxis()->SetTitleOffset(1.3);
+	h->GetYaxis()->SetTitle(yTitle.c_str());
+
+	h->SetMarkerStyle(20);
+	h->SetMarkerSize(0.6);
+	h->SetMarkerColor(kAzure + 2);
+	h->SetLineColor(kAzure + 2);
+}
+
+void formatGraphs(TGraphAsymmErrors *& h, string xTitle, string yTitle, string title)
+{
+	h->SetTitle(title.c_str());
+
+	h->GetXaxis()->SetTitleFont(62);
+	h->GetXaxis()->SetLabelFont(62);
+	h->GetXaxis()->SetTitleOffset(1.3);
+	h->GetXaxis()->SetTitle(xTitle.c_str());
+
+	h->GetYaxis()->SetTitleFont(62);
+	h->GetYaxis()->SetLabelFont(62);
+	h->GetYaxis()->SetTitleOffset(1.3);
+	h->GetYaxis()->SetTitle(yTitle.c_str());
+
+	h->SetMarkerStyle(20);
+	h->SetMarkerSize(0.6);
+	h->SetMarkerColor(kAzure + 2);
+	h->SetLineColor(kAzure + 2);
+}
+
+void readCocktailFiles()
+{
+	//Get the Ke3 and J/Psi spectrum from Alan's cocktail from Run5
+	TFile *fin = new TFile("cocktail_10M_pp200_run5_with_jpsi_ups_cent.root");
+	h_pT_ke3   = (TH1D*) fin->Get("pteKe3");
+	h_pT_jpsi  = (TH1D*) fin->Get("pteJPsi");
+}
+
+
+void createHFgraph()
+{
+	//Data from tables in published version of PPG077
+
+	float pT[28] = {0.35,
+	                0.45,
+	                0.55,
+	                0.65,
+	                0.75,
+	                0.85,
+	                0.95,
+	                1.10,
+	                1.30,
+	                1.50,
+	                1.70,
+	                1.90,
+	                2.10,
+	                2.30,
+	                2.50,
+	                2.70,
+	                2.90,
+	                3.10,
+	                3.30,
+	                3.50,
+	                3.70,
+	                3.90,
+	                4.25,
+	                4.75,
+	                5.50,
+	                6.50,
+	                7.50,
+	                8.50
+	               };
+
+	float yield[28] = {1.36E-2,
+	                   6.05E-3,
+	                   3.36E-3,
+	                   1.81E-3,
+	                   1.30E-3,
+	                   7.50E-4,
+	                   5.61E-4,
+	                   3.18E-4,
+	                   1.26E-4,
+	                   6.58E-5,
+	                   3.83E-5,
+	                   1.89E-5,
+	                   1.04E-5,
+	                   6.08E-6,
+	                   3.42E-6,
+	                   2.06E-6,
+	                   1.40E-6,
+	                   8.64E-7,
+	                   5.91E-7,
+	                   4.11E-7,
+	                   2.83E-7,
+	                   1.91E-7,
+	                   1.08E-7,
+	                   4.84E-8,
+	                   1.59E-8,
+	                   5.30E-9,
+	                   1.27E-9,
+	                   8.19E-10
+	                  };
+
+	float errx[28] = {0.0};
+
+	float erry[28] = {4.45E-3,
+	                  1.70E-3,
+	                  7.56E-4,
+	                  3.98E-4,
+	                  2.28E-4,
+	                  1.35E-4,
+	                  9.14E-5,
+	                  3.77E-5,
+	                  2.10E-5,
+	                  1.25E-5,
+	                  2.07E-6,
+	                  1.18E-6,
+	                  7.44E-7,
+	                  4.96E-7,
+	                  3.63E-7,
+	                  6.49E-8,
+	                  4.77E-8,
+	                  3.53E-8,
+	                  2.73E-8,
+	                  2.15E-8,
+	                  1.70E-8,
+	                  1.36E-8,
+	                  5.95E-9,
+	                  3.73E-9,
+	                  1.79E-9,
+	                  9.26E-10,
+	                  5.73E-10,
+	                  5.16E-10
+	                 };
+
+	g_pT_hf_ppg077 = new TGraphErrors(28, pT, yield, errx, erry);
+}
+
+
+void fitHFgraph()
+{
+	//Fit the HF electron yield from PPG077 with a modified Hagedorn function
+	f_hf_fit = new TF1("f_hf_fit", "[0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4])", 0.0, 10.0);
+	//f_hf_fit->SetParameters(0.0397086, 6.80332e-01, -1.93544e-02, 6.76802e-01, 7.22179e+00);
+	f_hf_fit->SetParameter(0, 4.41211e-02);
+	f_hf_fit->SetParameter(1, 0.96);
+	f_hf_fit->SetParameter(2, -9.56027e-02);
+	f_hf_fit->SetParameter(3, 7.10173e-01);
+	f_hf_fit->SetParameter(4, 7.11577e+00);
+
+	g_pT_hf_ppg077->Fit(f_hf_fit, "Q0R");
+
+	//Use TGraph to fill histogram with the same binning as for J/psi and Ke3
+	h_pT_hf = (TH1D*) h_pT_jpsi->Clone("h_pT_hf");
+	h_pT_hf->Reset();
+
+	for (int i = 1; i <= h_pT_hf->GetNbinsX(); i++)
+	{
+		float pTcenter = h_pT_hf->GetBinCenter(i);
+		float yield = f_hf_fit->Eval(pTcenter);
+
+		h_pT_hf->SetBinContent(i, yield);
+	}
+
+	//Plot fit and ratio
+	TCanvas *cNP = new TCanvas("cNP", "Stacked Representation of Fit", 700, 900);
+	TPad *pad1 = new TPad("pad1", "pad1", 0, 0.3, 1, 1);
+	pad1->SetLogy();
+	pad1->SetTickx();
+	pad1->SetTicky();
+	pad1->SetBottomMargin(0);
+	pad1->Draw();
+	pad1->cd();
+
+	TH1F *hTemplate2 = new TH1F("hTemplate2", "hTemplate2", 100, 0, 20);
+	hTemplate2->SetTitle("");
+	hTemplate2->GetXaxis()->SetTitleFont(62);
+	hTemplate2->GetXaxis()->SetLabelFont(62);
+	hTemplate2->GetXaxis()->SetRangeUser(0, 10);
+	hTemplate2->GetYaxis()->SetTitleFont(62);
+	hTemplate2->GetYaxis()->SetLabelFont(62);
+	hTemplate2->GetXaxis()->SetTitle("p_{T} [GeV/c]");
+	hTemplate2->GetYaxis()->SetTitle("dN/dp_{T}");
+	hTemplate2->GetYaxis()->SetTitleOffset(1.3);
+	hTemplate2->GetYaxis()->SetRangeUser(1e-10, 1E-1);
+	hTemplate2->Draw();
+
+	g_pT_hf_ppg077->SetTitle("");
+	g_pT_hf_ppg077->GetXaxis()->SetTitleFont(62);
+	g_pT_hf_ppg077->GetXaxis()->SetLabelFont(62);
+	g_pT_hf_ppg077->GetXaxis()->SetRangeUser(0, 10);
+	g_pT_hf_ppg077->GetYaxis()->SetTitleFont(62);
+	g_pT_hf_ppg077->GetYaxis()->SetLabelFont(62);
+	g_pT_hf_ppg077->GetXaxis()->SetTitle("p_{T} [GeV/c]");
+	g_pT_hf_ppg077->GetYaxis()->SetTitle("dN/dp_{T}");
+	g_pT_hf_ppg077->GetYaxis()->SetRangeUser(1e-10, 1E-1);
+	g_pT_hf_ppg077->SetMarkerStyle(20);
+	g_pT_hf_ppg077->SetMarkerSize(0.8);
+	g_pT_hf_ppg077->SetMarkerColor(kBlack);
+	g_pT_hf_ppg077->Draw("P,same");
+	f_hf_fit->Draw("same");
+
+	TLatex latex;
+	latex.SetNDC();
+	latex.SetTextSize(0.025);
+	latex.DrawLatex(.15, .85, "PHENIX HF Electron Spectrum in p+p");
+	latex.DrawLatex(.15, .82, "PPG077");
+
+	/*
+	TLegend *legend = new TLegend(0.45, 0.45, 0.88, 0.65);
+	legend->AddEntry(f_published_spectrum_fit_extrapolated_npf, "Fit to Spectrum", "l");
+	legend->AddEntry(f_spectrum_fit_var1_extrapolated_npf, "Variation 1: Clockwise Tilt", "l");
+	legend->AddEntry(f_spectrum_fit_var2_extrapolated_npf, "Variation 2: Counterclockwise Tilt", "l");
+	legend->SetFillStyle(0.0);
+	legend->SetLineColor(kWhite);
+	legend->Draw("same");
+	*/
+
+	cNP->cd();
+	TPad *pad2 = new TPad("pad2", "pad2", 0, 0, 1, 0.3);
+	pad2->SetTopMargin(0);
+	pad2->SetBottomMargin(0.3);
+	pad2->Draw();
+	pad2->cd();
+	pad2->SetTickx();
+	pad2->SetTicky();
+
+	//Create ratio
+	TH1D *h_ratio = (TH1D*) h_pT_hf->Clone("h_ratio");
+	for (int i = 0; i < g_pT_hf_ppg077->GetN(); i++)
+	{
+		double pT, gval;
+		g_pT_hf_ppg077->GetPoint(i, pT, gval);
+		h_ratio->SetBinContent(i + 1, gval / f_hf_fit->Eval(pT));
+	}
+
+	h_ratio->SetMarkerStyle(7);
+	h_ratio->GetXaxis()->SetTitleFont(62);
+	h_ratio->GetXaxis()->SetLabelFont(62);
+	h_ratio->GetXaxis()->SetRangeUser(0, 10);
+	h_ratio->GetYaxis()->SetTitleFont(62);
+	h_ratio->GetYaxis()->SetLabelFont(62);
+	h_ratio->SetTitle("");
+	h_ratio->GetYaxis()->CenterTitle();
+	h_ratio->GetYaxis()->SetRangeUser(0.7, 1.28);
+	h_ratio->GetXaxis()->SetTitle("p_{T} [GeV/c]");
+	h_ratio->GetYaxis()->SetTitle("Data / Fit");
+	h_ratio->GetYaxis()->SetTitleSize(0.085);
+	h_ratio->GetYaxis()->SetTitleOffset(0.4);
+	h_ratio->GetYaxis()->SetLabelSize(0.085);
+	h_ratio->GetXaxis()->SetTitleSize(0.085);
+	h_ratio->GetXaxis()->SetTitleOffset(1.2);
+	h_ratio->GetXaxis()->SetLabelSize(0.085);
+	h_ratio->Draw("L");
+	cNP->cd();
+
+}
+
+
+void getNonPhotonicNormalizationFactors()
+{
+	//First, add up contributions from all NP sources
+	h_pT_np = (TH1D*) h_pT_jpsi->Clone("h_pT_np");
+	h_pT_np->Add(h_pT_ke3);
+	h_pT_np->Add(h_pT_hf);
+
+	//Now, compute normalization factors using FNP
+	h_norm_ke3 = (TH1D*) h_pT_ke3->Clone("h_norm_ke3");
+	h_norm_jpsi = (TH1D*) h_pT_jpsi->Clone("h_norm_jpsi");
+
+	h_norm_ke3->Divide(h_pT_np);
+	h_norm_jpsi->Divide(h_pT_np);
+
+	for (int i = 1; i <= h_norm_ke3->GetNbinsX(); i++)
+	{
+		float pT = h_norm_ke3->GetBinCenter(i);
+		float norm_ke3 = h_norm_ke3->GetBinContent(i);
+		norm_ke3 = norm_ke3 * f_fnp_fit_with_veto->Eval(pT);
+		h_norm_ke3->SetBinContent(i, norm_ke3);
+		h_norm_ke3->SetBinError(i, h_norm_ke3->GetBinError(i) * f_fnp_fit_with_veto->Eval(pT));
+	}
+
+	for (int i = 1; i <= h_norm_jpsi->GetNbinsX(); i++)
+	{
+		float pT = h_norm_jpsi->GetBinCenter(i);
+		float norm_jpsi = h_norm_jpsi->GetBinContent(i);
+		norm_jpsi = norm_jpsi * f_fnp_fit_with_veto->Eval(pT);
+		h_norm_jpsi->SetBinError(i, h_norm_jpsi->GetBinError(i)* f_fnp_fit_with_veto->Eval(pT));
+		h_norm_jpsi->SetBinContent(i, norm_jpsi);
+	}
+
+}
+
+
+void readFiles()
+{
+	//Files from simulation
+	TFile *fSimsPizero = new TFile("Sims/Cocktail090217/twopizeros_cdphiana.root");
+	TFile *fSimsPhoton = new TFile("Sims/Cocktail090217/twophotons_cdphiana.root");
+	TFile *fSimsEta = new TFile("Sims/Cocktail090217/twoetas_cdphiana.root");
+
+	string vetoSelection = "";
+	if (vetoLayers == 0)
+	{
+		vetoSelection = "pTcut";
+	}
+	else if (vetoLayers == 1)
+	{
+		vetoSelection = "pTcut_pix";
+	}
+	else if (vetoLayers == 2)
+	{
+		vetoSelection = "pTcut_b0";
+	}
+	else if (vetoLayers == 3)
+	{
+		vetoSelection = "pTcut_b1";
+	}
+
+	h_nevents_pizero = (TH1D*) fSimsPizero->Get("h_nevents");
+	h_nevents_photon = (TH1D*) fSimsPhoton->Get("h_nevents");
+	h_nevents_eta = (TH1D*) fSimsEta->Get("h_nevents");
+
+	cout << "+++ " << h_nevents_pizero->GetBinContent(1) << "   " << h_nevents_photon->GetBinContent(1) << "    " << h_nevents_eta->GetBinContent(1) << endl;
+
+	for (int i = 0; i < NVARPIZEROS; i++)
+	{
+		h_elec_pT_pizeros[i]                 = (TH1D*) fSimsPizero->Get(Form("h_scaled_elec_pT_%i", i));
+		h_elec_pT_pizeros_rejected[i]        = (TH1D*) fSimsPizero->Get(Form("h_scaled_elec_pT_rejected_%s_%i", vetoSelection.c_str(), i));
+		h_elec_pT_pizeros_accepted[i]        = (TH1D*) fSimsPizero->Get(Form("h_scaled_elec_pT_notrejected_%s_%i", vetoSelection.c_str(), i));
+
+		h_elec_pT_pizeros_conv_accepted[i]   = (TH1D*) fSimsPizero->Get(Form("h_scaled_elec_conv_pT_notrejected_%s_%i", vetoSelection.c_str(), i));
+		h_elec_pT_pizeros_dalitz_accepted[i] = (TH1D*) fSimsPizero->Get(Form("h_scaled_elec_dalitz_pT_notrejected_%s_%i", vetoSelection.c_str(), i));
+
+		h_elec_pT_pizeros_conv[i]   = (TH1D*) fSimsPizero->Get(Form("h_scaled_elec_conv_pT_%i", i));
+		h_elec_pT_pizeros_dalitz[i] = (TH1D*) fSimsPizero->Get(Form("h_scaled_elec_dalitz_pT_%i", i));
+	}
+
+	for (int i = 0; i < NVARETAS; i++)
+	{
+		h_elec_pT_etas[i]                 = (TH1D*) fSimsEta->Get(Form("h_scaled_elec_pT_%i", i));
+		h_elec_pT_etas_rejected[i]        = (TH1D*) fSimsEta->Get(Form("h_scaled_elec_pT_rejected_%s_%i", vetoSelection.c_str(), i));
+		h_elec_pT_etas_accepted[i]        = (TH1D*) fSimsEta->Get(Form("h_scaled_elec_pT_notrejected_%s_%i", vetoSelection.c_str(), i));
+
+		h_elec_pT_etas_conv_accepted[i]   = (TH1D*) fSimsEta->Get(Form("h_scaled_elec_conv_pT_notrejected_%s_%i", vetoSelection.c_str(), i));
+		h_elec_pT_etas_dalitz_accepted[i] = (TH1D*) fSimsEta->Get(Form("h_scaled_elec_dalitz_pT_notrejected_%s_%i", vetoSelection.c_str(), i));
+
+		h_elec_pT_etas_conv[i]   = (TH1D*) fSimsEta->Get(Form("h_scaled_elec_conv_pT_%i", i));
+		h_elec_pT_etas_dalitz[i] = (TH1D*) fSimsEta->Get(Form("h_scaled_elec_dalitz_pT_%i", i));
+	}
+
+	for (int i = 0; i < NVARPHOTONS; i++)
+	{
+		h_elec_pT_photons[i]                 = (TH1D*) fSimsPhoton->Get(Form("h_scaled_elec_pT_%i", i));
+		h_elec_pT_photons_rejected[i]        = (TH1D*) fSimsPhoton->Get(Form("h_scaled_elec_pT_rejected_%s_%i", vetoSelection.c_str(), i));
+		h_elec_pT_photons_accepted[i]        = (TH1D*) fSimsPhoton->Get(Form("h_scaled_elec_pT_notrejected_%s_%i", vetoSelection.c_str(), i));
+
+		h_elec_pT_photons_conv_accepted[i]   = (TH1D*) fSimsPhoton->Get(Form("h_scaled_elec_conv_pT_notrejected_%s_%i", vetoSelection.c_str(), i));
+		h_elec_pT_photons_dalitz_accepted[i] = (TH1D*) fSimsPhoton->Get(Form("h_scaled_elec_dalitz_pT_notrejected_%s_%i", vetoSelection.c_str(), i));
+
+		h_elec_pT_photons_conv[i]   = (TH1D*) fSimsPhoton->Get(Form("h_scaled_elec_conv_pT_%i", i));
+		h_elec_pT_photons_dalitz[i] = (TH1D*) fSimsPhoton->Get(Form("h_scaled_elec_dalitz_pT_%i", i));
+	}
+
+	//Files from data
+	TFile *fData = new TFile("Data/11568/calcsurvivalrate.root");
+
+	if (vetoLayers == 2)
+	{
+		vetoSelection = "pTcut_B0";
+	}
+	else if (vetoLayers == 3)
+	{
+		vetoSelection = "pTcut_B1";
+	}
+
+	h_elec_pT          = (TH1D*) fData->Get("h_elec_pT");
+	h_elec_pT_rejected = (TH1D*) fData->Get(Form("h_elec_pT_rejected_%s", vetoSelection.c_str()));
+	h_elec_pT_accepted = (TH1D*) fData->Get(Form("h_elec_pT_notrejected_%s", vetoSelection.c_str()));
+
+	h_elec_sw_pT          = (TH1D*) fData->Get("h_elec_sw_pT");
+	h_elec_sw_pT_rejected = (TH1D*) fData->Get(Form("h_elec_sw_pT_rejected_%s", vetoSelection.c_str()));
+	h_elec_sw_pT_accepted = (TH1D*) fData->Get(Form("h_elec_sw_pT_notrejected_%s", vetoSelection.c_str()));
+
+	h_hadron_pT          = (TH1D*) fData->Get("h_hadron_pT");
+	h_hadron_pT_rejected = (TH1D*) fData->Get(Form("h_hadron_pT_rejected_%s", vetoSelection.c_str()));
+	h_hadron_pT_accepted = (TH1D*) fData->Get(Form("h_hadron_pT_notrejected_%s", vetoSelection.c_str()));
+}
+
+
+void setSimErrorsToZero()
+{
+	//Set the errors on histograms from simulation to zero.
+	//This is done to determine the extent to which the statistical errors on the final FNP
+	//are driven by having low statistics in simulations (which can be easily fixed!) or in data...
+
+	for (int i = 0; i < NVARPIZEROS; i++)
+	{
+		for (int j = 1; j <= h_elec_pT_pizeros[i]->GetNbinsX(); j++)
+		{
+			h_elec_pT_pizeros[i]->SetBinError(j, 0.0);
+			h_elec_pT_pizeros_rejected[i]->SetBinError(j, 0.0);
+			h_elec_pT_pizeros_accepted[i]->SetBinError(j, 0.0);
+		}
+	}
+
+	for (int i = 0; i < NVARETAS; i++)
+	{
+		for (int j = 1; j <= h_elec_pT_etas[i]->GetNbinsX(); j++)
+		{
+			h_elec_pT_etas[i]->SetBinError(j, 0.0);
+			h_elec_pT_etas_rejected[i]->SetBinError(j, 0.0);
+			h_elec_pT_etas_accepted[i]->SetBinError(j, 0.0);
+		}
+	}
+
+	for (int i = 0; i < NVARPHOTONS; i++)
+	{
+		for (int j = 1; j <= h_elec_pT_photons[i]->GetNbinsX(); j++)
+		{
+			h_elec_pT_photons[i]->SetBinError(j, 0.0);
+			h_elec_pT_photons_rejected[i]->SetBinError(j, 0.0);
+			h_elec_pT_photons_accepted[i]->SetBinError(j, 0.0);
+		}
+	}
+}
+
+
+float getEtaPhotonRatio(int etaIndex, int photonIndex)
+{
+	//Take the ratio of the total yield of etas to photons for a given set of spectra
+	float etaYield = f_eta_spectrum[etaIndex]->Eval(18.0);
+	float photonYield = f_photon_spectrum[photonIndex]->Eval(18.0);
+
+	return etaYield / photonYield;
+}
+
+
+float getPizeroPhotonRatio(int pizeroIndex, int photonIndex)
+{
+	//Take the ratio of the total yield of etas to photons for a given set of spectra
+	float pizeroYield = f_pizero_spectrum[pizeroIndex]->Eval(18.0);
+	float photonYield = f_photon_spectrum[photonIndex]->Eval(18.0);
+
+	return pizeroYield / photonYield;
+}
+
+
+void rebinHistograms()
+{
+	/*
+	h_elec_pT_pizeros->Rebin(REBINF);
+	h_elec_pT_pizeros_rejected->Rebin(REBINF);
+	h_elec_pT_pizeros_accepted->Rebin(REBINF);
+	h_elec_pT_photons->Rebin(REBINF);
+	h_elec_pT_photons_rejected->Rebin(REBINF);
+	h_elec_pT_photons_accepted->Rebin(REBINF);
+	h_elec_pT_etas->Rebin(REBINF);
+	h_elec_pT_etas_rejected->Rebin(REBINF);
+	h_elec_pT_etas_accepted->Rebin(REBINF);
+
+	h_elec_pT->Rebin(REBINF);
+	h_elec_pT_rejected->Rebin(REBINF);
+	h_elec_pT_accepted->Rebin(REBINF);
+	h_elec_sw_pT->Rebin(REBINF);
+	h_elec_sw_pT_rejected->Rebin(REBINF);
+	h_elec_sw_pT_accepted->Rebin(REBINF);
+	h_hadron_pT->Rebin(REBINF);
+	h_hadron_pT_rejected->Rebin(REBINF);
+	h_hadron_pT_accepted->Rebin(REBINF);
+	*/
+
+
+	//Rebin data electron spectrum with variable bin width
+	double bins[10] = {1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0};
+
+	for (int i = 0; i < NVARPIZEROS; i++)
+	{
+		h_elec_pT_pizeros[i] = (TH1D*) h_elec_pT_pizeros[i]->Rebin(NBINSFNP, Form("h_elec_pT_pizeros_rebinned_%i", i), bins);
+		h_elec_pT_pizeros_rejected[i] = (TH1D*) h_elec_pT_pizeros_rejected[i]->Rebin(NBINSFNP, Form("h_elec_pT_pizeros_rejected_rebinned_%i", i), bins);
+		h_elec_pT_pizeros_accepted[i] = (TH1D*) h_elec_pT_pizeros_accepted[i]->Rebin(NBINSFNP, Form("h_elec_pT_pizeros_accepted_rebinned_%i", i), bins);
+		h_elec_pT_pizeros_conv_accepted[i] = (TH1D*) h_elec_pT_pizeros_conv_accepted[i]->Rebin(NBINSFNP, Form("h_elec_pT_pizeros_conv_accepted_rebinned_%i", i), bins);
+		h_elec_pT_pizeros_dalitz_accepted[i] = (TH1D*) h_elec_pT_pizeros_dalitz_accepted[i]->Rebin(NBINSFNP, Form("h_elec_pT_pizeros_dalitz_accepted_rebinned_%i", i), bins);
+		h_elec_pT_pizeros_conv[i] = (TH1D*) h_elec_pT_pizeros_conv[i]->Rebin(NBINSFNP, Form("h_elec_pT_pizeros_conv_rebinned_%i", i), bins);
+		h_elec_pT_pizeros_dalitz[i] = (TH1D*) h_elec_pT_pizeros_dalitz[i]->Rebin(NBINSFNP, Form("h_elec_pT_pizeros_dalitz_rebinned_%i", i), bins);
+	}
+
+	for (int i = 0; i < NVARETAS; i++)
+	{
+		h_elec_pT_etas[i] = (TH1D*) h_elec_pT_etas[i]->Rebin(NBINSFNP, Form("h_elec_pT_etas_rebinned_%i", i), bins);
+		h_elec_pT_etas_rejected[i] = (TH1D*) h_elec_pT_etas_rejected[i]->Rebin(NBINSFNP, Form("h_elec_pT_etas_rejected_rebinned_%i", i), bins);
+		h_elec_pT_etas_accepted[i] = (TH1D*) h_elec_pT_etas_accepted[i]->Rebin(NBINSFNP, Form("h_elec_pT_etas_accepted_rebinned_%i", i), bins);
+		h_elec_pT_etas_conv_accepted[i] = (TH1D*) h_elec_pT_etas_conv_accepted[i]->Rebin(NBINSFNP, Form("h_elec_pT_etas_conv_accepted_rebinned_%i", i), bins);
+		h_elec_pT_etas_dalitz_accepted[i] = (TH1D*) h_elec_pT_etas_dalitz_accepted[i]->Rebin(NBINSFNP, Form("h_elec_pT_etas_dalitz_accepted_rebinned_%i", i), bins);
+		h_elec_pT_etas_conv[i] = (TH1D*) h_elec_pT_etas_conv[i]->Rebin(NBINSFNP, Form("h_elec_pT_etas_conv_rebinned_%i", i), bins);
+		h_elec_pT_etas_dalitz[i] = (TH1D*) h_elec_pT_etas_dalitz[i]->Rebin(NBINSFNP, Form("h_elec_pT_etas_dalitz_rebinned_%i", i), bins);
+	}
+
+	for (int i = 0; i < NVARPHOTONS; i++)
+	{
+		h_elec_pT_photons[i] = (TH1D*) h_elec_pT_photons[i]->Rebin(NBINSFNP, Form("h_elec_pT_photons_rebinned_%i", i), bins);
+		h_elec_pT_photons_rejected[i] = (TH1D*) h_elec_pT_photons_rejected[i]->Rebin(NBINSFNP, Form("h_elec_pT_photons_rejected_rebinned_%i", i), bins);
+		h_elec_pT_photons_accepted[i] = (TH1D*) h_elec_pT_photons_accepted[i]->Rebin(NBINSFNP, Form("h_elec_pT_photons_accepted_rebinned_%i", i), bins);
+		h_elec_pT_photons_conv_accepted[i] = (TH1D*) h_elec_pT_photons_conv_accepted[i]->Rebin(NBINSFNP, Form("h_elec_pT_photons_conv_accepted_rebinned_%i", i), bins);
+		h_elec_pT_photons_dalitz_accepted[i] = (TH1D*) h_elec_pT_photons_dalitz_accepted[i]->Rebin(NBINSFNP, Form("h_elec_pT_photons_dalitz_accepted_rebinned_%i", i), bins);
+		h_elec_pT_photons_conv[i] = (TH1D*) h_elec_pT_photons_conv[i]->Rebin(NBINSFNP, Form("h_elec_pT_photons_conv_rebinned_%i", i), bins);
+		h_elec_pT_photons_dalitz[i] = (TH1D*) h_elec_pT_photons_dalitz[i]->Rebin(NBINSFNP, Form("h_elec_pT_photons_dalitz_rebinned_%i", i), bins);
+	}
+
+	h_elec_pT = (TH1D*) h_elec_pT->Rebin(NBINSFNP, "h_elec_pT_rebinned", bins);
+	h_elec_pT_rejected = (TH1D*) h_elec_pT_rejected->Rebin(NBINSFNP, "h_elec_pT_rejected_rebinned", bins);
+	h_elec_pT_accepted = (TH1D*) h_elec_pT_accepted->Rebin(NBINSFNP, "h_elec_pT_accepted_rebinned", bins);
+	h_elec_sw_pT = (TH1D*) h_elec_sw_pT->Rebin(NBINSFNP, "h_elec_sw_pT_rebinned", bins);
+	h_elec_sw_pT_rejected = (TH1D*) h_elec_sw_pT_rejected->Rebin(NBINSFNP, "h_elec_sw_pT_rejected_rebinned", bins);
+	h_elec_sw_pT_accepted = (TH1D*) h_elec_sw_pT_accepted->Rebin(NBINSFNP, "h_elec_sw_pT_accepted_rebinned", bins);
+	h_hadron_pT = (TH1D*) h_hadron_pT->Rebin(NBINSFNP, "h_hadron_pT_rebinned", bins);
+	h_hadron_pT_rejected = (TH1D*) h_hadron_pT_rejected->Rebin(NBINSFNP, "h_hadron_pT_rejected_rebinned", bins);
+	h_hadron_pT_accepted = (TH1D*) h_hadron_pT_accepted->Rebin(NBINSFNP, "h_hadron_pT_accepted_rebinned", bins);
+}
+
+
+void defineSpectra()
+{
+	f_photon_spectrum[0] = new TF1("f_photon_spectrum_0", "2*TMath::Pi()*x*[0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4])", 0.0, 18.0);
+	f_photon_spectrum[0]->SetParameters(0.242345, -0.0827585, 0.00918447, 4.13943, 13.6974);
+
+	f_photon_spectrum[1] = new TF1("f_photon_spectrum_1", "2*TMath::Pi()*x*([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4]))", 0.0, 18.0);
+	f_photon_spectrum[1]->SetParameters(13.0488, -0.191588, 0.0164036, 0.999159, 8.42105);
+
+	f_photon_spectrum[2] = new TF1("f_photon_spectrum_2", "2*TMath::Pi()*x*(([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4])))", 0.0, 18.0);
+	f_photon_spectrum[2]->SetParameters(0.171216, -0.0312528, 0.00442746, 11.6472, 29.538);
+
+	f_photon_spectrum[3] = new TF1("f_photon_spectrum_3", "2*TMath::Pi()*x*(([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4])))", 0.0, 18.0);
+	f_photon_spectrum[3]->SetParameters(0.012215, -0.0539112, 0.00527051, 4.69066, 11.7111);
+
+
+	f_pizero_spectrum[0] = new TF1("f_pizero_spectrum_0", "2*TMath::Pi()*x*([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4]))", 0.0, 18.0);
+	f_pizero_spectrum[0]->SetParameters(254.066, 0.470186, 0.0380066, 0.737713, 8.28442);
+
+	f_pizero_spectrum[1] = new TF1("f_pizero_spectrum_1", "2*TMath::Pi()*x*(([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4])))", 0.0, 18.0);
+	f_pizero_spectrum[1]->SetParameters(339.852, 0.417738, 0.0599019, 0.719301, 8.33941);
+
+	f_pizero_spectrum[2] = new TF1("f_pizero_spectrum_2", "2*TMath::Pi()*x*(([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4])))", 0.0, 18.0);
+	f_pizero_spectrum[2]->SetParameters(184.594, 0.524929, 0.0111792, 0.762548, 8.24103);
+
+
+	f_eta_spectrum[0] = new TF1("f_eta_spectrum_0", "TMath::Power(TMath::Sqrt(1+(0.135/x)*(0.135/x)),-1.0)*0.5*TMath::Sqrt(1+(0.135/x)*(0.135/x))*(2*TMath::Pi()*x*([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4])))", 0.0, 18.0);
+	f_eta_spectrum[0]->SetParameters(254.066, 0.470186, 0.0380066, 0.737713, 8.28442);
+
+	f_eta_spectrum[1] = new TF1("f_eta_spectrum_1", "2*TMath::Pi()*x*(([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4])))", 0.0, 18.0);
+	f_eta_spectrum[1]->SetParameters(1201.68, -0.0135258, 0.0215599, 0.782018, 9.31206);
+
+	f_eta_spectrum[2] = new TF1("f_eta_spectrum_2", "2*TMath::Pi()*x*([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4]))", 0.0, 18.0);
+	f_eta_spectrum[2]->SetParameters(1372.01, 0.0103744, 0.0225786, 0.71981, 9.07938);
+
+	f_eta_spectrum[3] = new TF1("f_eta_spectrum_3", "2*TMath::Pi()*x*([0]/TMath::Power((TMath::Exp(-[1]*x-[2]*x*x)+(x/[3])),[4]))", 0.0, 18.0);
+	f_eta_spectrum[3]->SetParameters(545.206, 0.421156, -0.00156003, 0.58791, 8.04994);
+
+	f_eta_spectrum[4] = new TF1("f_eta_spectrum_4", "2*TMath::Pi()*x*(([0]*(([1]-1)*([1]-1))/(([1]*[2]+0.53*([1]-1))*([1]*[2]+0.53))*pow(([1]*[2]+TMath::Sqrt(0.53*0.53+x*x))/([1]*[2]+0.53),-1*[1])))", 0.0, 18.0);
+	f_eta_spectrum[4]->SetParameters(0.786558, 9.24328, 0.100848);
+}
+
+
+void calculateSpeciesSurvival()
+{
+	//Survival rate for each individual particle species
+	//Survival = Accepted / Total
+	for (int i = 0; i < NVARETAS; i++)
+	{
+		h_survival_etas[i] = (TH1D*) h_elec_pT_etas_accepted[i]->Clone(Form("h_survival_etas_%i", i));
+		h_survival_etas[i]->Divide(h_elec_pT_etas[i]);
+	}
+
+	for (int i = 0; i < NVARPIZEROS; i++)
+	{
+		h_survival_pizeros[i] = (TH1D*) h_elec_pT_pizeros_accepted[i]->Clone(Form("h_survival_pizeros_%i", i));
+		h_survival_pizeros[i]->Divide(h_elec_pT_pizeros[i]);
+	}
+
+	for (int i = 0; i < NVARPHOTONS; i++)
+	{
+		h_survival_photons[i] = (TH1D*) h_elec_pT_photons_accepted[i]->Clone(Form("h_survival_photons_%i", i));
+		h_survival_photons[i]->Divide(h_elec_pT_photons[i]);
+	}
+
+	//Survival rate for Dalitz and conversion electrons
+	h_survival_dalitz = (TH1D*) h_elec_pT_pizeros_dalitz_accepted[0]->Clone("h_survival_dalitz");
+	h_survival_dalitz->Add(h_elec_pT_etas_dalitz_accepted[0]);
+	h_survival_dalitz->Add(h_elec_pT_photons_dalitz_accepted[0]);
+
+	TH1D *h_aux1 = (TH1D*) h_elec_pT_pizeros_dalitz[0]->Clone("h_aux1");
+	h_aux1->Add(h_elec_pT_etas_dalitz[0]);
+	h_aux1->Add(h_elec_pT_photons_dalitz[0]);
+
+	h_survival_dalitz->Divide(h_aux1);
+
+	h_survival_conversion = (TH1D*) h_elec_pT_pizeros_conv_accepted[0]->Clone("h_survival_conversion");
+	h_survival_conversion->Add(h_elec_pT_etas_conv_accepted[0]);
+	h_survival_conversion->Add(h_elec_pT_photons_conv_accepted[0]);
+
+	TH1D *h_aux2 = (TH1D*) h_elec_pT_pizeros_conv[0]->Clone("h_aux2");
+	h_aux2->Add(h_elec_pT_etas_conv[0]);
+	h_aux2->Add(h_elec_pT_photons_conv[0]);
+
+	h_survival_conversion->Divide(h_aux2);
+}
+
+
+void calculateConversionEfficiencyAndRCP()
+{
+	//Conversion efficiency = photonic electrons after cut / photonic electrons without cut
+	//Here we calculate the conversion efficiency for all possible combinations of reweighting each particle spectrum
+	//There are 60 total combinations, labeled by three indices (i, j, k) = (photon, pizero, eta)
+	//We also calculate RCP for all 60 combinations
+
+	//cout << "********* Indices = (photon, pizero, eta, eta-pi ratio) **********" << endl << endl;
+
+	TH1D *h_pT_photonic[NUMFNPS];
+	TH1D *h_pT_photonic_accepted[NUMFNPS];
+
+	TH1D *h_pT_conv[NUMFNPS];
+	TH1D *h_pT_dalitz[NUMFNPS];
+
+	int numHisto = 0;
+	for (int i = 0; i < NVARPHOTONS; i++)
+	{
+		for (int j = 0; j < NVARPIZEROS; j++)
+		{
+			for (int k = 0; k < NVARETAS; k++)
+			{
+				for (int m = 0; m < NVARETAPIRATIO; m++)
+				{
+					//Scale photonic electron yields to account for relative ratio between pions (etas) and photons
+					float pionScale = getPizeroPhotonRatio(j, i) * (h_nevents_pizero->GetBinContent(1) / h_nevents_photon->GetBinContent(1));
+					float etaScale = getEtaPhotonRatio(i, k) * (h_nevents_eta->GetBinContent(1) / h_nevents_photon->GetBinContent(1));
+
+					//Scale electrons from eta by variation on eta/pizero ratio
+					float etaPiRatioScale = etaPiRatio[m];
+
+					TH1D *h_aux_pizeros = (TH1D*) h_elec_pT_pizeros[j]->Clone(Form("h_aux_pizeros_%i_%i_%i_%i", i, j, k, m));
+					TH1D *h_aux_etas = (TH1D*) h_elec_pT_etas[k]->Clone(Form("h_aux_etas_%i_%i_%i_%i", i, j, k, m));
+
+					TH1D *h_aux_pizeros_conv = (TH1D*) h_elec_pT_pizeros_conv_accepted[j]->Clone(Form("h_aux_pizeros_conv_%i_%i_%i_%i", i, j, k, m));
+					TH1D *h_aux_etas_conv = (TH1D*) h_elec_pT_etas_conv_accepted[k]->Clone(Form("h_aux_etas_conv_%i_%i_%i_%i", i, j, k, m));
+
+					TH1D *h_aux_pizeros_dalitz = (TH1D*) h_elec_pT_pizeros_dalitz_accepted[j]->Clone(Form("h_aux_pizeros_dalitz_%i_%i_%i_%i", i, j, k, m));
+					TH1D *h_aux_etas_dalitz = (TH1D*) h_elec_pT_etas_dalitz_accepted[k]->Clone(Form("h_aux_etas_dalitz_%i_%i_%i_%i", i, j, k, m));
+
+					h_aux_pizeros->Scale(pionScale);
+					h_aux_etas->Scale(etaScale);
+					h_aux_etas->Scale(etaPiRatioScale);
+
+					h_aux_pizeros_conv->Scale(pionScale);
+					h_aux_etas_conv->Scale(etaScale);
+					h_aux_etas_conv->Scale(etaPiRatioScale);
+
+					h_aux_pizeros_dalitz->Scale(pionScale);
+					h_aux_etas_dalitz->Scale(etaScale);
+					h_aux_etas_dalitz->Scale(etaPiRatioScale);
+
+					h_pT_photonic[numHisto] = (TH1D*) h_elec_pT_photons[i]->Clone(Form("h_pT_photonic_%i_%i_%i_%i", i, j, k, m));
+					h_pT_photonic[numHisto]->Add(h_aux_pizeros);
+					h_pT_photonic[numHisto]->Add(h_aux_etas);
+
+					h_pT_conv[numHisto] = (TH1D*) h_elec_pT_photons_conv_accepted[i]->Clone(Form("h_pT_conv_%i_%i_%i_%i", i, j, k, m));
+					h_pT_conv[numHisto]->Add(h_aux_pizeros_conv);
+					h_pT_conv[numHisto]->Add(h_aux_etas_conv);
+
+					h_pT_dalitz[numHisto] = (TH1D*) h_elec_pT_photons_dalitz_accepted[i]->Clone(Form("h_pT_dalitz_%i_%i_%i_%i", i, j, k, m));
+					h_pT_dalitz[numHisto]->Add(h_aux_pizeros_dalitz);
+					h_pT_dalitz[numHisto]->Add(h_aux_etas_dalitz);
+
+					//cout << numHisto << ": " << i << " " << j << " " << k << " " << m << endl;
+
+					numHisto++;
+				}
+			}
+		}
+	}
+
+	numHisto = 0;
+	for (int i = 0; i < NVARPHOTONS; i++)
+	{
+		for (int j = 0; j < NVARPIZEROS; j++)
+		{
+			for (int k = 0; k < NVARETAS; k++)
+			{
+				for (int m = 0; m < NVARETAPIRATIO; m++)
+				{
+					//Scale photonic electron yields to account for relative ratio between pions (etas) and photons
+					float pionScale = getPizeroPhotonRatio(j, i);
+					float etaScale = getEtaPhotonRatio(i, k);
+
+					//Scale electrons from eta by variation on eta/pizero ratio
+					float etaPiRatioScale = etaPiRatio[m];
+
+					TH1D *h_aux_pizeros = (TH1D*) h_elec_pT_pizeros_accepted[j]->Clone(Form("h_aux_pizeros_accepted_%i_%i_%i_%i", i, j, k, m));
+					TH1D *h_aux_etas = (TH1D*) h_elec_pT_etas_accepted[k]->Clone(Form("h_aux_etas_accepted_%i_%i_%i_%i", i, j, k, m));
+
+					h_aux_pizeros->Scale(pionScale);
+					h_aux_etas->Scale(etaScale);
+					h_aux_etas->Scale(etaPiRatioScale);
+
+					h_pT_photonic_accepted[numHisto] = (TH1D*) h_elec_pT_photons_accepted[i]->Clone(Form("h_pT_photonic_%i_%i_%i_%i", i, j, k, m));
+					h_pT_photonic_accepted[numHisto]->Add(h_aux_pizeros);
+					h_pT_photonic_accepted[numHisto]->Add(h_aux_etas);
+
+					//Calculate photonic fraction for each source (eta, pizero, photon)
+					h_photonic_fraction_pizero[numHisto] = (TH1D*) h_aux_pizeros->Clone(Form("h_photonic_fraction_pizero_%i_%i_%i_%i", i, j, k, m));
+					h_photonic_fraction_pizero[numHisto]->Divide(h_pT_photonic_accepted[numHisto]);
+
+					h_photonic_fraction_eta[numHisto] = (TH1D*) h_aux_etas->Clone(Form("h_photonic_fraction_eta_%i_%i_%i_%i", i, j, k, m));
+					h_photonic_fraction_eta[numHisto]->Divide(h_pT_photonic_accepted[numHisto]);
+
+					h_photonic_fraction_photon[numHisto] = (TH1D*) h_elec_pT_photons_accepted[i]->Clone(Form("h_photonic_fraction_photon_%i_%i_%i_%i", i, j, k, m));
+					h_photonic_fraction_photon[numHisto]->Divide(h_pT_photonic_accepted[numHisto]);
+
+					numHisto++;
+				}
+			}
+		}
+	}
+
+	for (int i = 0; i < NUMFNPS; i++)
+	{
+		h_conversion_efficiency[i] = (TH1D*) h_pT_photonic_accepted[i]->Clone(Form("h_conversion_efficiency_%i", i));
+		h_conversion_efficiency[i]->Divide(h_pT_photonic[i]);
+
+		h_RCP[i] = (TH1D*) h_pT_conv[i]->Clone(Form("h_RCP_%i", i));
+		h_RCP[i]->Divide(h_pT_photonic_accepted[i]);
+	}
+}
+
+
+void calculateRandomlyKilledEfficiency()
+{
+	//Randomly killed efficiency = hadrons after cut / hadrons without cut
+	h_killed_efficiency = (TH1D*) h_hadron_pT_accepted->Clone("h_killed_efficiency");
+	h_killed_efficiency->Divide(h_hadron_pT);
+}
+
+
+void getCleanElectronSample()
+{
+	//Subtract swapped tracks from electron candidates
+	h_elec_pT_inclusive = (TH1D*) h_elec_pT->Clone("h_elec_pT_inclusive");
+	h_elec_pT_inclusive->Add(h_elec_sw_pT, -1.0);
+
+	h_elec_pT_isolated = (TH1D*) h_elec_pT_accepted->Clone("h_elec_pT_isolated");
+	h_elec_pT_isolated->Add(h_elec_sw_pT_accepted, -1.0);
+}
+
+
+int getPhotonIndex(int index)
+{
+	return index / 45;
+}
+
+
+int getPionIndex(int index)
+{
+	return (index - (index / 45) * 45) / 15;
+}
+
+
+int getEtaIndex(int index)
+{
+	return (index - (index / 15) * 15) / 3;
+}
+
+int getEtaPiRatioIndex(int index)
+{
+	return index % 3;
+}
+
+
+void getPhotonicNormalizationFactors()
+{
+	//Get the normalization factors from RCP and FNP as follows
+	// --> Conversions: (1-FNP) x RCP
+	// --> Dalitz: (1 - FNP) x (1 - RCP)
+
+	h_normalization_dalitz = (TH1D*) h_RCP[0]->Clone("h_normalization_dalitz");
+	h_normalization_conv = (TH1D*) h_RCP[0]->Clone("h_normalization_conv");
+
+	for (int i = 1; i <= h_normalization_conv->GetNbinsX(); i++)
+	{
+		float normFactor = h_normalization_conv->GetBinContent(i) * (1.0 - h_FNP_conv[0]->GetBinContent(i));
+		h_normalization_conv->SetBinContent(i, normFactor);
+	}
+
+	for (int i = 1; i <= h_normalization_dalitz->GetNbinsX(); i++)
+	{
+		float normFactor = (1.0 - h_normalization_dalitz->GetBinContent(i)) * (1.0 - h_FNP_conv[0]->GetBinContent(i));
+		h_normalization_dalitz->SetBinContent(i, normFactor);
+	}
+
+	//Get the normalization factors for individual photonic cocktail components as follows
+	// --> ith source: (1-FNP) x ith photonic fraction
+	h_normalization_pizero = (TH1D*) h_FNP_conv[0]->Clone("h_normalization_pizero");
+	h_normalization_eta = (TH1D*) h_FNP_conv[0]->Clone("h_normalization_eta");
+	h_normalization_photon = (TH1D*) h_FNP_conv[0]->Clone("h_normalization_photon");
+
+	h_normalization_pizero->Multiply(h_photonic_fraction_pizero[0]);
+	h_normalization_eta->Multiply(h_photonic_fraction_eta[0]);
+	h_normalization_photon->Multiply(h_photonic_fraction_photon[0]);
+}
+
+
+void getFNP()
+{
+	for (int i = 0; i < NUMFNPS; i++)
+	{
+		//Histogram filled with all ones
+		TH1D *h_one = (TH1D*) h_elec_pT_inclusive->Clone("h_one");
+		for (int i = 1; i <= h_one->GetNbinsX(); i++)
+		{
+			h_one->SetBinContent(i, 1.0);
+			h_one->SetBinError(i, 0.0);
+		}
+
+		//Calculate P and NP without conv veto
+		TH1D *h_aux1 = (TH1D*) h_elec_pT_inclusive->Clone("h_aux1");
+		h_aux1->Multiply(h_killed_efficiency);
+
+		TH1D *h_aux2 = (TH1D*) h_elec_pT_isolated->Clone("h_aux2");
+		h_aux2->Add(h_aux1, -1.0);
+
+		TH1D *h_aux3 = (TH1D*) h_conversion_efficiency[i]->Clone("h_aux3");
+		h_aux3->Add(h_one, -1.0);
+
+		TH1D *h_aux4 = (TH1D*) h_killed_efficiency->Clone("h_aux4");
+		h_aux4->Multiply(h_aux3);
+
+		h_P[i] = (TH1D*) h_aux2->Clone("h_P");
+		h_P[i]->Divide(h_aux4);
+
+		h_NP[i] = (TH1D*) h_elec_pT_inclusive->Clone("h_NP");
+		h_NP[i]->Add(h_P[i], -1.0);
+
+		//Calculate FNP without conv veto
+		TH1D *h_aux5 = (TH1D*) h_NP[i]->Clone("h_aux5");
+		h_aux5->Add(h_P[i]);
+
+		h_FNP[i] = (TH1D*) h_NP[i]->Clone("h_FNP");
+		h_FNP[i]->Divide(h_aux5);
+
+		//Calculate FNP using BayesDivide to handle the errors,
+		//so they don't go above 1
+		g_eff_FNP[i] = new TGraphAsymmErrors();
+		g_eff_FNP[i]->Divide(h_NP[i], h_aux5, "cl=0.683 b(1,1) mode");
+
+		//Set horizontal error bar on TGraphAsymmErrors to zero
+		for (int j = 0; j < g_eff_FNP[i]->GetN(); j++)
+		{
+			g_eff_FNP[i]->SetPointError(j, 0.0, 0.0, g_eff_FNP[i]->GetErrorYlow(j), g_eff_FNP[i]->GetErrorYhigh(j));
+		}
+
+		//Calculate FNP with the conversion verto by multiplying NP by the randomly killed
+		//effiency, and P by the isolation cut efficiency and randomly killed efficiency
+		//Then, FNP = e_r*NP / (e_r*NP + e_r*e_i*P)
+		TH1D *h_aux6 = (TH1D*) h_NP[i]->Clone("h_aux6");
+		TH1D *h_aux7 = (TH1D*) h_P[i]->Clone("h_aux7");
+
+		h_aux6->Multiply(h_killed_efficiency);
+		h_aux7->Multiply(h_killed_efficiency);
+		h_aux7->Multiply(h_conversion_efficiency[i]);
+
+		TH1D *h_aux8 = (TH1D*) h_aux6->Clone("h_aux8");
+		h_aux8->Add(h_aux7);
+
+		h_FNP_conv[i] = (TH1D*) h_aux6->Clone("h_FNP_conv");
+		h_FNP_conv[i]->Divide(h_aux8);
+
+		//Calculate FNP using BayesDivide class to handle the errors,
+		//so they don't go above 1
+		g_eff_FNP_conv[i] = new TGraphAsymmErrors();
+		g_eff_FNP_conv[i] = new TGraphAsymmErrors();
+		g_eff_FNP_conv[i]->Divide(h_aux6, h_aux8, "cl=0.683 b(1,1) mode");
+
+		//Set horizontal error bar on TGraphAsymmErrors to zero
+		for (int j = 0; j < g_eff_FNP_conv[i]->GetN(); j++)
+		{
+			g_eff_FNP_conv[i]->SetPointError(j, 0.0, 0.0, g_eff_FNP_conv[i]->GetErrorYlow(j), g_eff_FNP_conv[i]->GetErrorYhigh(j));
+		}
+	}
+}
+
+
+void getAsymmRMS()
+{
+	//----------------------------------------------------------------
+	// RMS Calculation for FNP Without Veto Cut
+	//----------------------------------------------------------------
+
+	//Display the systematics as a filled polygon
+	float x_syst[NBINSFNP * 2];
+	float y_syst[NBINSFNP * 2];
+
+	h_rms_plus = (TH1D*) h_FNP[0]->Clone("h_rms_plus");
+	h_rms_minus = (TH1D*) h_FNP[0]->Clone("h_rms_minus");
+
+	//Get the RMS of all systematic variations at every pT point
+	for (int i = 1; i <= NBINSFNP; i++)
+	{
+		//Vectors to store, for every FNP bin, the values of the systematic variations that are above and below the default value of FNP
+		std::vector<float> valuesAbove;
+		std::vector<float> valuesBelow;
+
+		//Array to store, for every FNP bin, the ratio of the systematic variation to the default value
+		float valuesRatio[NUMFNPS] = {0.0};
+		float values[NUMFNPS] = {0.0};
+
+		for (int j = 0; j < NUMFNPS; j++)
+		{
+			float fnpDefault = h_FNP[0]->GetBinContent(i);
+			float fnp = h_FNP[j]->GetBinContent(i);
+
+			if (fnp > fnpDefault)
+			{
+				valuesAbove.push_back(fnp - fnpDefault);
+			}
+			else if (fnp < fnpDefault)
+			{
+				valuesBelow.push_back(fnp - fnpDefault);
+			}
+
+			values[j] = fnp;
+			valuesRatio[j] = fnp / h_FNP[0]->GetBinContent(i);
+		}
+
+		//Calculate RMS for variations above the default
+		rmsFNP_noveto_asymm_above[i - 1] = 0.0;
+		for (int k = 0; k < valuesAbove.size(); k++)
+		{
+			rmsFNP_noveto_asymm_above[i - 1] += valuesAbove[k] * valuesAbove[k];
+		}
+		rmsFNP_noveto_asymm_above[i - 1] = TMath::Sqrt((float) rmsFNP_noveto_asymm_above[i - 1] / valuesAbove.size());
+
+		//Calculate RMS for variations below the default
+		rmsFNP_noveto_asymm_below[i - 1] = 0.0;
+		for (int k = 0; k < valuesBelow.size(); k++)
+		{
+			rmsFNP_noveto_asymm_below[i - 1] += valuesBelow[k] * valuesBelow[k];
+		}
+		rmsFNP_noveto_asymm_below[i - 1] = TMath::Sqrt((float) rmsFNP_noveto_asymm_below[i - 1] / valuesBelow.size());
+
+		float mean = TMath::Mean(NUMFNPS, values);
+		float meanRatio = TMath::Mean(NUMFNPS, valuesRatio);
+		float rmsFNP_novetoRatio = TMath::RMS(NUMFNPS, valuesRatio);
+		h_rms_plus->SetBinContent(i, meanRatio + rmsFNP_noveto_asymm_above[i - 1] / mean);
+		h_rms_minus->SetBinContent(i, meanRatio - rmsFNP_noveto_asymm_below[i - 1] / mean);
+
+		b_fnp_syst_noveto[i - 1] = new TBox(h_FNP[0]->GetBinCenter(i) - 0.15, h_FNP[0]->GetBinContent(i) - rmsFNP_noveto_asymm_below[i - 1], h_FNP[0]->GetBinCenter(i) + 0.15, h_FNP[0]->GetBinContent(i) + rmsFNP_noveto_asymm_above[i - 1]);
+	}
+
+	//Fill TGraph
+	//For a given pT, there will be 2 entries in the TGraph:
+	//Central value \pm RMS
+	for (int i = 1; i <= 2 * NBINSFNP; i++)
+	{
+		x_syst[i - 1] = h_FNP[0]->GetBinCenter((i - 1) % NBINSFNP + 1);
+
+		if (i - 1 < NBINSFNP)
+		{
+			y_syst[i - 1] = h_FNP[0]->GetBinContent((i - 1) % NBINSFNP + 1) + rmsFNP_noveto[i - 1];
+		}
+		else
+		{
+			y_syst[i - 1] = h_FNP[0]->GetBinContent((i - 1) % NBINSFNP + 1) - rmsFNP_noveto[i - 1];
+		}
+	}
+
+	g_systematicsRMS_noveto = new TGraph(2 * NBINSFNP, x_syst, y_syst);
+
+
+	//----------------------------------------------------------------
+	// RMS Calculation for FNP With Veto Cut
+	//----------------------------------------------------------------
+
+	//Display the systematics as a filled polygon
+	float x_syst_veto[NBINSFNP * 2];
+	float y_syst_veto[NBINSFNP * 2];
+
+	//Get the RMS of all systematic variations at every pT point
+	for (int i = 1; i <= NBINSFNP; i++)
+	{
+		//Vectors to store, for every FNP bin, the values of the systematic variations that are above and below the default value of FNP
+		std::vector<float> valuesAbove;
+		std::vector<float> valuesBelow;
+
+		//Array to store, for every FNP bin, the ratio of the systematic variation to the default value
+		float valuesRatio[NUMFNPS] = {0.0};
+		float values[NUMFNPS] = {0.0};
+
+		for (int j = 0; j < NUMFNPS; j++)
+		{
+			float fnpDefault = h_FNP_conv[0]->GetBinContent(i);
+			float fnp = h_FNP_conv[j]->GetBinContent(i);
+
+			if (fnp > fnpDefault)
+			{
+				valuesAbove.push_back(fnp - fnpDefault);
+			}
+			else if (fnp < fnpDefault)
+			{
+				valuesBelow.push_back(fnp - fnpDefault);
+			}
+
+			values[j] = fnp;
+			valuesRatio[j] = fnp / h_FNP[0]->GetBinContent(i);
+		}
+
+		//Calculate RMS for variations above the default
+		rmsFNP_veto_asymm_above[i - 1] = 0.0;
+		for (int k = 0; k < valuesAbove.size(); k++)
+		{
+			rmsFNP_veto_asymm_above[i - 1] += valuesAbove[k] * valuesAbove[k];
+		}
+		rmsFNP_veto_asymm_above[i - 1] = TMath::Sqrt((float) rmsFNP_noveto_asymm_above[i - 1] / valuesAbove.size());
+
+		//Calculate RMS for variations below the default
+		rmsFNP_veto_asymm_below[i - 1] = 0.0;
+		for (int k = 0; k < valuesBelow.size(); k++)
+		{
+			rmsFNP_veto_asymm_below[i - 1] += valuesBelow[k] * valuesBelow[k];
+		}
+		rmsFNP_veto_asymm_below[i - 1] = TMath::Sqrt((float) rmsFNP_veto_asymm_below[i - 1] / valuesBelow.size());
+
+		float mean = TMath::Mean(NUMFNPS, values);
+		float meanRatio = TMath::Mean(NUMFNPS, valuesRatio);
+		float rmsFNP_vetoRatio = TMath::RMS(NUMFNPS, valuesRatio);
+
+		b_fnp_syst_veto[i - 1] = new TBox(h_FNP_conv[0]->GetBinCenter(i) - 0.15, h_FNP_conv[0]->GetBinContent(i) - rmsFNP_veto_asymm_below[i - 1], h_FNP_conv[0]->GetBinCenter(i) + 0.15, h_FNP_conv[0]->GetBinContent(i) + rmsFNP_veto_asymm_above[i - 1]);
+	}
+
+	//Fill TGraph
+	//For a given pT, there will be 2 entries in the TGraph:
+	//Central value \pm RMS
+	for (int i = 1; i <= 2 * NBINSFNP; i++)
+	{
+		x_syst_veto[i - 1] = h_FNP[0]->GetBinCenter((i - 1) % NBINSFNP + 1);
+
+		if (i - 1 < NBINSFNP)
+		{
+			y_syst_veto[i - 1] = h_FNP[0]->GetBinContent((i - 1) % NBINSFNP + 1) + rmsFNP_noveto[i - 1];
+		}
+		else
+		{
+			y_syst_veto[i - 1] = h_FNP[0]->GetBinContent((i - 1) % NBINSFNP + 1) - rmsFNP_noveto[i - 1];
+		}
+	}
+
+	g_systematicsRMS_noveto = new TGraph(2 * NBINSFNP, x_syst_veto, y_syst_veto);
+}
+
+
+void getRMS()
+{
+	//Display the systematics as a filled polygon
+	float x_syst[NBINSFNP * 2];
+	float y_syst[NBINSFNP * 2];
+
+	h_rms_plus = (TH1D*) h_FNP[0]->Clone("h_rms_plus");
+	h_rms_minus = (TH1D*) h_FNP[0]->Clone("h_rms_minus");
+
+	//Get the RMS of all systematic variations at every pT point
+	for (int i = 1; i <= NBINSFNP; i++)
+	{
+		float values[NUMFNPS] = {0.0};
+		float valuesRatio[NUMFNPS] = {0.0};
+		for (int j = 0; j < NUMFNPS; j++)
+		{
+			float fnp = h_FNP[j]->GetBinContent(i);
+			values[j] = fnp;
+			valuesRatio[j] = fnp / h_FNP[0]->GetBinContent(i);
+		}
+
+		rmsFNP_noveto[i - 1] = TMath::RMS(NUMFNPS, values);
+		float mean = TMath::Mean(NUMFNPS, values);
+		float meanRatio = TMath::Mean(NUMFNPS, valuesRatio);
+		float rmsFNP_novetoRatio = TMath::RMS(NUMFNPS, valuesRatio);
+		h_rms_plus->SetBinContent(i, meanRatio + rmsFNP_novetoRatio);
+		h_rms_minus->SetBinContent(i, meanRatio - rmsFNP_novetoRatio);
+
+		b_fnp_syst_noveto[i - 1] = new TBox(h_FNP[0]->GetBinCenter(i) - 0.15, mean - TMath::RMS(NUMFNPS, values), h_FNP[0]->GetBinCenter(i) + 0.15, mean + TMath::RMS(NUMFNPS, values));
+	}
+
+	//Fill TGraph
+	//For a given pT, there will be 2 entries in the TGraph:
+	//Central value \pm RMS
+	for (int i = 1; i <= 2 * NBINSFNP; i++)
+	{
+		x_syst[i - 1] = h_FNP[0]->GetBinCenter((i - 1) % NBINSFNP + 1);
+
+		if (i - 1 < NBINSFNP)
+		{
+			y_syst[i - 1] = h_FNP[0]->GetBinContent((i - 1) % NBINSFNP + 1) + rmsFNP_noveto[i - 1];
+		}
+		else
+		{
+			y_syst[i - 1] = h_FNP[0]->GetBinContent((i - 1) % NBINSFNP + 1) - rmsFNP_noveto[i - 1];
+		}
+	}
+
+	g_systematicsRMS_noveto = new TGraph(2 * NBINSFNP, x_syst, y_syst);
+}
+
+
+void getRatiosToDefault()
+{
+	//Take the ratio of each systematic variation to the default FNP
+	for (int i = 0; i < NUMFNPS; i++)
+	{
+		//Without conversion veto
+		h_FNP_default_ratios[i] = (TH1D*) h_FNP[i]->Clone(Form("h_fnp_default_ratio_%i", i));
+		h_FNP_default_ratios[i]->Divide(h_FNP[0]);
+
+		h_FNP_default_ratios[i]->SetMarkerColor(kRed);
+		h_FNP_default_ratios[i]->SetMarkerStyle(2);
+		h_FNP_default_ratios[i]->SetMarkerSize(1.0);
+
+		//With conversion veto
+		h_FNP_conv_default_ratios[i] = (TH1D*) h_FNP_conv[i]->Clone(Form("h_fnp_conv_default_ratio_%i", i));
+		h_FNP_conv_default_ratios[i]->Divide(h_FNP_conv[0]);
+
+		h_FNP_conv_default_ratios[i]->SetMarkerColor(kBlue);
+		h_FNP_conv_default_ratios[i]->SetMarkerStyle(20);
+		h_FNP_conv_default_ratios[i]->SetMarkerSize(0.4);
+	}
+
+}
+
+
+void plotFNP(int index)
+{
+	TCanvas *cFNP = new TCanvas("cFNP", "cFNP", 600, 600);
+	formatHistograms(h_FNP[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+	formatHistograms(h_FNP_conv[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+	formatGraphs(g_eff_FNP[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+	formatGraphs(g_eff_FNP_conv[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+
+	g_eff_FNP[index]->SetMarkerStyle(20);
+	g_eff_FNP[index]->SetMarkerColor(kAzure + 2);
+	g_eff_FNP[index]->SetLineColor(kAzure + 2);
+	g_eff_FNP[index]->SetMarkerSize(0.6);
+
+	g_eff_FNP_conv[index]->SetMarkerStyle(20);
+	g_eff_FNP_conv[index]->SetMarkerColor(kRed);
+	g_eff_FNP_conv[index]->SetLineColor(kRed);
+	g_eff_FNP_conv[index]->SetMarkerSize(0.6);
+
+	h_FNP_conv[index]->SetMarkerColor(kRed);
+	h_FNP_conv[index]->SetLineColor(kRed);
+	h_FNP[index]->GetYaxis()->SetRangeUser(0.0, 1.2);
+	h_FNP[index]->GetXaxis()->SetRangeUser(1.0, 10.0);
+
+	g_eff_FNP[index]->GetYaxis()->SetRangeUser(0.0, 1.2);
+	g_eff_FNP[index]->GetXaxis()->SetRangeUser(1.0, 10.0);
+
+	if (effErrors)
+	{
+		g_eff_FNP[index]->Draw("AP");
+		g_eff_FNP_conv[index]->Draw("P,same");
+	}
+	else
+	{
+		h_FNP[index]->Draw();
+		h_FNP_conv[index]->Draw("same");
+	}
+
+	//Plot FNP from template fitting method in the first three bins (July 20 - 2017)
+	float pT15[5] = {1.25, 1.75, 2.25, 2.75, 3.25};
+
+	float fnp_B0[5] = {0.17, 0.25, 0.342, 0.43, 0.47};
+	float fnp_err_B0[4] = {0.0};
+
+	float fnp_B1[5] = {0.167, 0.26, 0.355, 0.44, 0.52};
+	float fnp_err_B1[4] = {0.0};
+
+	//Data points from Aug 29 - with uncorrelated underlying event
+	//float fnp_B0[5] = {0.207, 0.299, 0.413, 0.489};
+	//float fnp_B1[5] = {0.250, 0.309, 0.412, 0.466};
+
+	//float fnp_err_B0[5] = {0.008, 0.010, 0.008, 0.006};
+	//float fnp_err_B1[5] = {0.008, 0.008, 0.007, 0.006};
+
+	float err_x[5] = {0.0};
+
+	TGraphErrors *g_fnp_B0 = new TGraphErrors(5, pT15, fnp_B0, err_x, fnp_err_B0);
+	TGraphErrors *g_fnp_B1 = new TGraphErrors(5, pT15, fnp_B1, err_x, fnp_err_B1);
+
+	//Plot FNP from template fitting method (May 9 - 2017)
+	/*
+	float pT15[7] = {1.25, 1.75, 2.25, 2.75, 3.5, 5.0, 7.0};
+
+	float fnp_B0[7] = {0.269985, 0.357814, 0.428488, 0.454788, 0.506252, 0.602844, 0.798613};
+	float fnp_err_B0[7] = {0.00361323, 0.00425627, 0.00682485, 0.0111647, 0.014485, 0.0283789, 0.119273};
+
+	float fnp_B1[7] = {0.272355, 0.364761, 0.435008, 0.488402, 0.584216, 0.599103, 0.772028};
+	float fnp_err_B1[7] = {0.00250411, 0.0027377, 0.00429937, 0.00675822, 0.00824138, 0.0167099, 0.0551451};
+
+	float err_x[7] = {0.0};
+
+	TGraphErrors *g_fnp_B0 = new TGraphErrors(7, pT15, fnp_B0, err_x, fnp_err_B0);
+	TGraphErrors *g_fnp_B1 = new TGraphErrors(7, pT15, fnp_B1, err_x, fnp_err_B1);
+	*/
+
+	g_fnp_B0->SetMarkerStyle(20);
+	g_fnp_B0->SetMarkerSize(0.7);
+	g_fnp_B0->SetMarkerColor(kViolet);
+	g_fnp_B0->SetLineColor(kViolet);
+
+	g_fnp_B1->SetMarkerStyle(20);
+	g_fnp_B1->SetMarkerSize(0.7);
+	g_fnp_B1->SetMarkerColor(kGreen + 2);
+	g_fnp_B1->SetLineColor(kGreen + 2);
+
+	//g_fnp_B0->Draw("P,same");
+	//fg_fnp_B1->Draw("P,same");
+
+	TLegend *legFNP = new TLegend(0.3, 0.15, 0.85, 0.40);
+	legFNP->SetLineColor(kWhite);
+	legFNP->AddEntry(h_FNP_conv[index], "F_{NP} With Veto Cut", "PE");
+	legFNP->AddEntry(h_FNP[index], "F_{NP} Without Veto Cut", "PE");
+	//legFNP->AddEntry(g_fnp_B0, "Template Fitting Method in B0 - No Veto Cut", "P");
+	//legFNP->AddEntry(g_fnp_B1, "F_{NP} From Template Fitting in B1 - No Veto Cut", "PE");
+	legFNP->Draw("same");
+
+	//Systematic error band
+	//g_systematicsRMS_noveto->SetLineColor(0); //green
+	//g_systematicsRMS_noveto->SetLineWidth(0);
+	//g_systematicsRMS_noveto->SetFillColorAlpha(kRed, 0.4); //blue
+	//g_systematicsRMS_noveto->Draw("f,same"); //draw with Axis and Fill
+	//g_systematicsRMS_noveto->Draw("l,same");  //draw only the contour Line
+}
+
+
+void plotNormalization()
+{
+	//Photonic normalization
+	TCanvas *cPhotonicNorm = new TCanvas("cPhotonicNorm", "cPhotonicNorm", 600, 600);
+
+	h_normalization_dalitz->SetMarkerColor(kBlue);
+	h_normalization_dalitz->SetLineColor(kBlue);
+	h_normalization_dalitz->SetMarkerStyle(20);
+	h_normalization_dalitz->SetMarkerSize(0.8);
+
+	h_normalization_conv->SetMarkerColor(kRed);
+	h_normalization_conv->SetLineColor(kRed);
+	h_normalization_conv->SetMarkerStyle(20);
+	h_normalization_conv->SetMarkerSize(0.6);
+
+	formatHistograms(h_normalization_dalitz, "p_{T} [GeV/c]", "Photonic Normalization Factor", " ");
+	h_normalization_dalitz->GetYaxis()->SetRangeUser(0, 0.5);
+
+	h_normalization_dalitz->Draw("P");
+	h_normalization_conv->Draw("P,same");
+
+	//Non-photonic normalization
+	TCanvas *cNonPhotonicNorm = new TCanvas("cNonPhotonicNorm", "cNonPhotonicNorm", 600, 600);
+
+	h_norm_ke3->SetMarkerColor(kBlue);
+	h_norm_ke3->SetLineColor(kBlue);
+	h_norm_ke3->SetMarkerStyle(20);
+	h_norm_ke3->SetMarkerSize(0.8);
+
+	h_norm_jpsi->SetMarkerColor(kRed);
+	h_norm_jpsi->SetLineColor(kRed);
+	h_norm_jpsi->SetMarkerStyle(20);
+	h_norm_jpsi->SetMarkerSize(0.6);
+
+	formatHistograms(h_norm_ke3, "p_{T} [GeV/c]", "Non-Photonic Normalization Factor", " ");
+	h_norm_ke3->GetYaxis()->SetRangeUser(1E-10, 1.0);
+	h_norm_ke3->GetXaxis()->SetRangeUser(1.0, 10.0);
+
+	cNonPhotonicNorm->SetLogy();
+	h_norm_ke3->Draw("P");
+	h_norm_jpsi->Draw("P,same");
+
+	//Photonic normalization for individual cocktail components
+	TCanvas *cPhotonicNormComponents = new TCanvas("cPhotonicNormComponents", "cPhotonicNormComponents", 600, 600);
+
+	h_normalization_pizero->SetMarkerColor(kBlue);
+	h_normalization_pizero->SetLineColor(kBlue);
+	h_normalization_pizero->SetMarkerStyle(20);
+	h_normalization_pizero->SetMarkerSize(0.8);
+
+	h_normalization_eta->SetMarkerColor(kRed);
+	h_normalization_eta->SetLineColor(kRed);
+	h_normalization_eta->SetMarkerStyle(20);
+	h_normalization_eta->SetMarkerSize(0.6);
+
+	h_normalization_photon->SetMarkerColor(kGreen + 3);
+	h_normalization_photon->SetLineColor(kGreen + 3);
+	h_normalization_photon->SetMarkerStyle(20);
+	h_normalization_photon->SetMarkerSize(0.6);
+
+	formatHistograms(h_normalization_pizero, "p_{T} [GeV/c]", "Photonic Normalization Factor", " ");
+	h_normalization_pizero->GetYaxis()->SetRangeUser(0.0, 1.0);
+	h_normalization_pizero->Draw("P");
+	h_normalization_eta->Draw("P,same");
+	h_normalization_photon->Draw("P,same");
+
+	TLegend *legPhotNormComp = new TLegend(0.18, 0.7, 0.48, 0.85);
+	legPhotNormComp->SetLineColor(kWhite);
+	legPhotNormComp->AddEntry(h_normalization_pizero, "#pi^{0} (Dalitz + Conversion)", "P");
+	legPhotNormComp->AddEntry(h_normalization_eta, "#eta (Dalitz + Conversion)", "P");
+	legPhotNormComp->AddEntry(h_normalization_photon, "#gamma (Conversion)", "P");
+	legPhotNormComp->Draw("same");
+}
+
+void plotNonPhotonicComponents()
+{
+	TCanvas *cNonPhotonicComponents = new TCanvas("cNonPhotonicComponents", "cNonPhotonicComponents", 600, 600);
+	cNonPhotonicComponents->SetLogy();
+
+	h_pT_ke3->SetLineColor(kBlue);
+	h_pT_ke3->SetMarkerColor(kBlue);
+	h_pT_ke3->SetMarkerSize(0.3);
+	h_pT_ke3->SetMarkerStyle(20);
+
+	h_pT_jpsi->SetLineColor(kRed);
+	h_pT_jpsi->SetMarkerColor(kRed);
+	h_pT_jpsi->SetMarkerSize(0.4);
+	h_pT_jpsi->SetMarkerStyle(20);
+
+	h_pT_hf->SetLineColor(kGreen + 3);
+	h_pT_hf->SetMarkerColor(kGreen + 3);
+	h_pT_hf->SetMarkerSize(0.4);
+	h_pT_hf->SetMarkerStyle(20);
+
+	h_pT_np->SetLineColor(kBlack);
+	h_pT_np->SetMarkerColor(kBlack);
+	h_pT_np->SetMarkerSize(0.5);
+	h_pT_np->SetMarkerStyle(20);
+
+	f_hf_fit->SetLineColor(kGreen + 3);
+
+	formatHistograms(h_pT_ke3, "p_{T} [GeV/c]", "Ed^{3}#sigma/dp_{T}", " ");
+
+	h_pT_ke3->GetXaxis()->SetRangeUser(1.0, 10.0);
+	h_pT_ke3->Draw("P");
+	h_pT_jpsi->Draw("P,same");
+	h_pT_hf->Draw("P,same");
+	//h_pT_np->Draw("P,same");
+}
+
+
+void plotRCP()
+{
+	TCanvas *cRNP = new TCanvas("cRNP", "cRNP", 600, 600);
+
+	h_RCP[0]->SetMarkerColor(kBlue);
+	h_RCP[0]->SetLineColor(kBlue);
+	h_RCP[0]->SetMarkerStyle(20);
+	h_RCP[0]->SetMarkerSize(0.8);
+
+	formatHistograms(h_RCP[0], "p_{T} [GeV/c]", "R_{CP}", " ");
+	h_RCP[0]->GetYaxis()->SetRangeUser(0, 1);
+
+	h_RCP[0]->Draw("P");
+}
+
+
+void plotFNPwRatio()
+{
+	TCanvas *cFNPRatio = new TCanvas("cFNPRatio", "Stacked Representation of Fit", 700, 900);
+	TPad *pad1 = new TPad("pad1", "pad1", 0, 0.3, 1, 1);
+	//pad1->SetLogy();
+	pad1->SetTickx();
+	pad1->SetTicky();
+	pad1->SetBottomMargin(0);
+	pad1->Draw();
+	pad1->cd();
+
+	TH1F *hTemplate3 = new TH1F("hTemplate3", "hTemplate3", 1, 1, 9.5);
+	hTemplate3->SetTitle("");
+	hTemplate3->GetXaxis()->SetTitleFont(62);
+	hTemplate3->GetXaxis()->SetLabelFont(62);
+	hTemplate3->GetXaxis()->SetRangeUser(1, 9.5);
+	hTemplate3->GetYaxis()->SetTitleFont(62);
+	hTemplate3->GetYaxis()->SetLabelFont(62);
+	hTemplate3->GetXaxis()->SetTitle("p_{T} [GeV/c]");
+	hTemplate3->GetYaxis()->SetTitle("F_{NP}");
+	hTemplate3->GetYaxis()->SetTitleOffset(1.3);
+	hTemplate3->GetYaxis()->SetRangeUser(0.0, 1.0);
+	hTemplate3->Draw();
+
+	for (int index = 0; index < NUMFNPS; index++)
+	{
+		formatHistograms(h_FNP[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+		formatHistograms(h_FNP_conv[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+		formatGraphs(g_eff_FNP[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+		formatGraphs(g_eff_FNP_conv[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+
+		g_eff_FNP[index]->SetMarkerStyle(20);
+		g_eff_FNP[index]->SetMarkerColor(kAzure + 2);
+		g_eff_FNP[index]->SetLineColor(kAzure - 9);
+		g_eff_FNP[index]->SetMarkerSize(0.6);
+
+		g_eff_FNP_conv[index]->SetMarkerStyle(20);
+		g_eff_FNP_conv[index]->SetMarkerColor(kRed);
+		g_eff_FNP_conv[index]->SetLineColor(kRed - 9);
+		g_eff_FNP_conv[index]->SetMarkerSize(0.6);
+
+		h_FNP_conv[index]->SetMarkerColor(kRed);
+		h_FNP_conv[index]->SetLineColor(kRed);
+		h_FNP[index]->GetYaxis()->SetRangeUser(0.0, 1.2);
+		h_FNP[index]->GetXaxis()->SetRangeUser(1.0, 10.0);
+
+		g_eff_FNP[index]->GetYaxis()->SetRangeUser(0.0, 1.2);
+		g_eff_FNP[index]->GetXaxis()->SetRangeUser(1.0, 10.0);
+
+		if (index == 0)
+		{
+			if (effErrors)
+			{
+				g_eff_FNP[index]->SetLineColor(kBlue);
+				g_eff_FNP_conv[index]->SetLineColor(kRed);
+
+				g_eff_FNP[index]->SetMarkerColor(kBlue);
+				g_eff_FNP_conv[index]->SetMarkerColor(kRed);
+
+				g_eff_FNP[index]->Draw("P,same");
+				g_eff_FNP_conv[index]->Draw("P,same");
+			}
+			else
+			{
+				//h_FNP[index]->Draw();
+				//h_FNP_conv[index]->Draw("same");
+			}
+		}
+		else
+		{
+			if (effErrors)
+			{
+				//g_eff_FNP[index]->Draw("LX,same");
+				//g_eff_FNP_conv[index]->Draw("LX,same");
+			}
+			else
+			{
+				//h_FNP[index]->Draw("same");
+				//h_FNP_conv[index]->Draw("same");
+			}
+		}
+	}
+
+	g_eff_FNP[0]->Draw("P,same");
+	g_eff_FNP_conv[0]->Draw("P,same");
+
+	f_fnp_fit_without_veto->SetLineColor(kBlue);
+	//f_fnp_fit_without_veto->Draw("same");
+
+	f_fnp_fit_with_veto->SetLineColor(kRed);
+	//f_fnp_fit_with_veto->Draw("same");
+
+	//Plot FNP from template fitting method (May 9 - 2017)
+	/*
+	float pT15[7] = {1.25, 1.75, 2.25, 2.75, 3.5, 5.0, 7.0};
+
+	float fnp_B0[7] = {0.269985, 0.357814, 0.428488, 0.454788, 0.506252, 0.602844, 0.798613};
+	float fnp_err_B0[7] = {0.00361323, 0.00425627, 0.00682485, 0.0111647, 0.014485, 0.0283789, 0.119273};
+
+	float fnp_B1[7] = {0.272355, 0.364761, 0.435008, 0.488402, 0.584216, 0.599103, 0.772028};
+	float fnp_err_B1[7] = {0.00250411, 0.0027377, 0.00429937, 0.00675822, 0.00824138, 0.0167099, 0.0551451};
+
+	float err_x[7] = {0.0};
+
+	TGraphErrors *g_fnp_B0 = new TGraphErrors(7, pT15, fnp_B0, err_x, fnp_err_B0);
+	TGraphErrors *g_fnp_B1 = new TGraphErrors(7, pT15, fnp_B1, err_x, fnp_err_B1);
+	*/
+
+	//Plot FNP from template fitting method in the first three bins (July 20 - 2017)
+	float pT15[4] = {1.25, 1.75, 2.25, 2.75};
+
+	//float fnp_B0[4] = {0.17, 0.25, 0.342, 0.43};
+	//float fnp_err_B0[4] = {0.0};
+
+	//float fnp_B1[4] = {0.167, 0.26, 0.355, 0.44};
+	//float fnp_err_B1[4] = {0.0};
+
+	float err_x[4] = {0.0};
+
+	//Data points from Aug 29 - with uncorrelated underlying event
+	//float fnp_B0[4] = {0.20, 0.28, 0.41, 0.42};
+	//float fnp_B1[4] = {0.22, 0.30, 0.42, 0.48};
+
+	//float fnp_err_B0[4] = {0.008, 0.010, 0.008, 0.006};
+	//float fnp_err_B1[4] = {0.008, 0.008, 0.007, 0.006};
+
+	//Data points from Aug 29 - with full underlying event
+	float fnp_B0[4] = {0.236, 0.313, 0.426, 0.498};
+	float fnp_B1[4] = {0.259, 0.318, 0.417, 0.475};
+
+	float fnp_err_B0[4] = {0.008, 0.010, 0.008, 0.006};
+	float fnp_err_B1[4] = {0.008, 0.008, 0.007, 0.006};
+
+	TGraphErrors *g_fnp_B0 = new TGraphErrors(4, pT15, fnp_B0, err_x, fnp_err_B0);
+	TGraphErrors *g_fnp_B1 = new TGraphErrors(4, pT15, fnp_B1, err_x, fnp_err_B1);
+
+	g_fnp_B0->SetMarkerStyle(20);
+	g_fnp_B0->SetMarkerSize(0.7);
+	g_fnp_B0->SetMarkerColor(kViolet);
+	g_fnp_B0->SetLineColor(kViolet);
+
+	g_fnp_B1->SetMarkerStyle(20);
+	g_fnp_B1->SetMarkerSize(0.7);
+	g_fnp_B1->SetMarkerColor(kGreen + 2);
+	g_fnp_B1->SetLineColor(kGreen + 2);
+
+	g_fnp_B0->Draw("P,same");
+	g_fnp_B1->Draw("P,same");
+
+	for (int i = 0; i < NBINSFNP; i++)
+	{
+		b_fnp_syst_noveto[i]->Draw("same");
+		b_fnp_syst_noveto[i]->SetLineColor(kBlue);
+		b_fnp_syst_noveto[i]->SetFillStyle(0);
+	}
+
+	for (int i = 0; i < NBINSFNP; i++)
+	{
+		b_fnp_syst_veto[i]->Draw("same");
+		b_fnp_syst_veto[i]->SetLineColor(kRed);
+		b_fnp_syst_veto[i]->SetFillStyle(0);
+	}
+
+	TLegend *legFNP = new TLegend(0.3, 0.1, 0.85, 0.35);
+	legFNP->SetLineColor(kWhite);
+	legFNP->AddEntry(g_eff_FNP_conv[0], "F_{NP} (Algebraic) - With Veto Cut", "P");
+	legFNP->AddEntry(g_eff_FNP[0], "F_{NP} (Algebraic) - No Veto Cut", "P");
+	legFNP->AddEntry(g_fnp_B0, "F_{NP} (Template Fitting) in B0 - No Veto Cut", "P");
+	legFNP->AddEntry(g_fnp_B1, "F_{NP} (Template Fitting) in B1 - No Veto Cut", "P");
+	legFNP->Draw("same");
+
+	cFNPRatio->cd();
+
+	TPad *pad2 = new TPad("pad2", "pad2", 0, 0, 1, 0.3);
+	pad2->SetTopMargin(0);
+	pad2->SetBottomMargin(0.3);
+	pad2->Draw();
+	pad2->cd();
+	pad2->SetTickx();
+	pad2->SetTicky();
+
+	TH1F *hTemplate4 = new TH1F("hTemplate4", "hTemplate4", 1, 1, 9.5);
+	hTemplate4->SetTitle("");
+	hTemplate4->GetXaxis()->SetTitleFont(62);
+	hTemplate4->GetXaxis()->SetLabelFont(62);
+	hTemplate4->GetXaxis()->SetTitleFont(62);
+	hTemplate4->GetXaxis()->SetLabelFont(62);
+	hTemplate4->GetXaxis()->SetRangeUser(1, 9.5);
+	hTemplate4->GetYaxis()->SetTitleFont(62);
+	hTemplate4->GetYaxis()->SetLabelFont(62);
+	hTemplate4->SetTitle("");
+	hTemplate4->GetYaxis()->CenterTitle();
+	hTemplate4->GetYaxis()->SetRangeUser(0.7, 1.28);
+	hTemplate4->GetXaxis()->SetTitle("p_{T} [GeV/c]");
+	hTemplate4->GetYaxis()->SetTitle("Algebraic / Template");
+	hTemplate4->GetYaxis()->SetTitleSize(0.085);
+	hTemplate4->GetYaxis()->SetTitleOffset(0.4);
+	hTemplate4->GetYaxis()->SetLabelSize(0.085);
+	hTemplate4->GetXaxis()->SetTitleSize(0.085);
+	hTemplate4->GetXaxis()->SetTitleOffset(1.2);
+	hTemplate4->GetXaxis()->SetLabelSize(0.085);
+	hTemplate4->Draw();
+
+	//Create ratio
+	TGraph *g_ratio_alg_tempB0 = new TGraph();
+	TGraph *g_ratio_alg_tempB1 = new TGraph();
+
+	for (int i = 0; i < g_fnp_B0->GetN(); i++)
+	{
+		double pT, gval_alg, gval_tempB0, gval_tempB1, junk1, junk2;
+		g_fnp_B0->GetPoint(i, pT, gval_tempB0);
+		g_fnp_B1->GetPoint(i, junk1, gval_tempB1);
+		g_eff_FNP[0]->GetPoint(i, junk2, gval_alg);
+		g_ratio_alg_tempB0->SetPoint(i, pT, gval_alg / gval_tempB0);
+		g_ratio_alg_tempB1->SetPoint(i, pT, gval_alg / gval_tempB1);
+
+		cout << "*** " << gval_alg << endl;
+	}
+
+	g_ratio_alg_tempB1->SetMarkerStyle(20);
+	g_ratio_alg_tempB1->SetMarkerColor(kGreen + 2);
+	g_ratio_alg_tempB1->SetLineColor(kGreen + 2);
+
+	g_ratio_alg_tempB0->SetMarkerStyle(20);
+	g_ratio_alg_tempB0->SetMarkerColor(kViolet);
+	g_ratio_alg_tempB0->SetLineColor(kViolet);
+
+	g_ratio_alg_tempB0->Draw("LP,same");
+	g_ratio_alg_tempB1->Draw("LP,same");
+	cFNPRatio->cd();
+}
+
+
+void plotFNP()
+{
+	TCanvas *cFNP = new TCanvas("cFNP", "cFNP", 600, 600);
+
+	for (int index = 0; index < NUMFNPS; index++)
+	{
+		formatHistograms(h_FNP[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+		formatHistograms(h_FNP_conv[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+		formatGraphs(g_eff_FNP[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+		formatGraphs(g_eff_FNP_conv[index], "p_{T} [GeV/c]", "F_{NP}", " ");
+
+		g_eff_FNP[index]->SetMarkerStyle(20);
+		g_eff_FNP[index]->SetMarkerColor(kAzure + 2);
+		g_eff_FNP[index]->SetLineColor(kAzure - 9);
+		g_eff_FNP[index]->SetMarkerSize(0.6);
+
+		g_eff_FNP_conv[index]->SetMarkerStyle(20);
+		g_eff_FNP_conv[index]->SetMarkerColor(kRed);
+		g_eff_FNP_conv[index]->SetLineColor(kRed - 9);
+		g_eff_FNP_conv[index]->SetMarkerSize(0.6);
+
+		h_FNP_conv[index]->SetMarkerColor(kRed);
+		h_FNP_conv[index]->SetLineColor(kRed);
+		h_FNP[index]->GetYaxis()->SetRangeUser(0.0, 1.2);
+		h_FNP[index]->GetXaxis()->SetRangeUser(1.0, 10.0);
+
+		g_eff_FNP[index]->GetYaxis()->SetRangeUser(0.0, 1.2);
+		g_eff_FNP[index]->GetXaxis()->SetRangeUser(1.0, 10.0);
+
+		if (index == 0)
+		{
+			if (effErrors)
+			{
+				g_eff_FNP[index]->SetLineColor(kBlue);
+				g_eff_FNP_conv[index]->SetLineColor(kRed);
+
+				g_eff_FNP[index]->SetMarkerColor(kBlue);
+				g_eff_FNP_conv[index]->SetMarkerColor(kRed);
+
+				g_eff_FNP[index]->Draw("AP");
+				g_eff_FNP_conv[index]->Draw("P,same");
+			}
+			else
+			{
+				//h_FNP[index]->Draw();
+				//h_FNP_conv[index]->Draw("same");
+			}
+		}
+		else
+		{
+			if (effErrors)
+			{
+				//g_eff_FNP[index]->Draw("LX,same");
+				//g_eff_FNP_conv[index]->Draw("LX,same");
+			}
+			else
+			{
+				//h_FNP[index]->Draw("same");
+				//h_FNP_conv[index]->Draw("same");
+			}
+		}
+	}
+
+	g_eff_FNP[0]->Draw("P,same");
+	g_eff_FNP_conv[0]->Draw("P,same");
+
+	f_fnp_fit_without_veto->SetLineColor(kBlue);
+	//f_fnp_fit_without_veto->Draw("same");
+
+	f_fnp_fit_with_veto->SetLineColor(kRed);
+	//f_fnp_fit_with_veto->Draw("same");
+
+	//Plot FNP from template fitting method (May 9 - 2017)
+	/*
+	float pT15[7] = {1.25, 1.75, 2.25, 2.75, 3.5, 5.0, 7.0};
+
+	float fnp_B0[7] = {0.269985, 0.357814, 0.428488, 0.454788, 0.506252, 0.602844, 0.798613};
+	float fnp_err_B0[7] = {0.00361323, 0.00425627, 0.00682485, 0.0111647, 0.014485, 0.0283789, 0.119273};
+
+	float fnp_B1[7] = {0.272355, 0.364761, 0.435008, 0.488402, 0.584216, 0.599103, 0.772028};
+	float fnp_err_B1[7] = {0.00250411, 0.0027377, 0.00429937, 0.00675822, 0.00824138, 0.0167099, 0.0551451};
+
+	float err_x[7] = {0.0};
+
+	TGraphErrors *g_fnp_B0 = new TGraphErrors(7, pT15, fnp_B0, err_x, fnp_err_B0);
+	TGraphErrors *g_fnp_B1 = new TGraphErrors(7, pT15, fnp_B1, err_x, fnp_err_B1);
+	*/
+
+	//Plot FNP from template fitting method in the first three bins (July 20 - 2017)
+	float pT15[4] = {1.25, 1.75, 2.25, 2.75};
+
+	float fnp_B0[4] = {0.17, 0.25, 0.342, 0.43};
+	float fnp_err_B0[4] = {0.0};
+
+	float fnp_B1[4] = {0.167, 0.26, 0.355, 0.44};
+	float fnp_err_B1[4] = {0.0};
+
+	float err_x[4] = {0.0};
+
+	TGraphErrors *g_fnp_B0 = new TGraphErrors(5, pT15, fnp_B0, err_x, fnp_err_B0);
+	TGraphErrors *g_fnp_B1 = new TGraphErrors(5, pT15, fnp_B1, err_x, fnp_err_B1);
+
+	g_fnp_B0->SetMarkerStyle(20);
+	g_fnp_B0->SetMarkerSize(0.7);
+	g_fnp_B0->SetMarkerColor(kViolet);
+	g_fnp_B0->SetLineColor(kViolet);
+
+	g_fnp_B1->SetMarkerStyle(20);
+	g_fnp_B1->SetMarkerSize(0.7);
+	g_fnp_B1->SetMarkerColor(kGreen + 2);
+	g_fnp_B1->SetLineColor(kGreen + 2);
+
+	g_fnp_B0->Draw("P,same");
+	g_fnp_B1->Draw("P,same");
+
+	for (int i = 0; i < NBINSFNP; i++)
+	{
+		b_fnp_syst_noveto[i]->Draw("same");
+		b_fnp_syst_noveto[i]->SetLineColor(kBlue);
+		b_fnp_syst_noveto[i]->SetFillStyle(0);
+	}
+
+	for (int i = 0; i < NBINSFNP; i++)
+	{
+		b_fnp_syst_veto[i]->Draw("same");
+		b_fnp_syst_veto[i]->SetLineColor(kRed);
+		b_fnp_syst_veto[i]->SetFillStyle(0);
+	}
+
+	TLegend *legFNP = new TLegend(0.3, 0.15, 0.85, 0.40);
+	legFNP->SetLineColor(kWhite);
+	legFNP->AddEntry(g_eff_FNP_conv[0], "F_{NP} (Algebraic) - With Veto Cut", "P");
+	legFNP->AddEntry(g_eff_FNP[0], "F_{NP} (Algebraic) - No Veto Cut", "P");
+	//legFNP->AddEntry(g_fnp_B0, "F_{NP} (Template Fitting) in B0 - No Veto Cut", "P");
+	//legFNP->AddEntry(g_fnp_B1, "F_{NP} (Template Fitting) in B1 - No Veto Cut", "P");
+	legFNP->Draw("same");
+}
+
+
+void plotKilledEfficiency()
+{
+	TCanvas *cKilledEfficiency = new TCanvas("cKilledEfficiency", "cKilledEfficiency", 600, 600);
+	formatHistograms(h_killed_efficiency, "p_{T} [GeV/c]", "Survival Rate due to Random Hits", " ");
+	h_killed_efficiency->GetYaxis()->SetRangeUser(0.0, 1.0);
+	h_killed_efficiency->Draw();
+}
+
+/*
+void plotSpeciesSurival()
+{
+	TCanvas *cSurvivalPizeros = new TCanvas("cSurvivalPizeros", "cSurvivalPizeros", 600, 600);
+	formatHistograms(h_survival_pizeros, "p_{T} [GeV/c]", "Survival Rate for Electrons from #pi^{0}", " ");
+	h_survival_pizeros->GetYaxis()->SetRangeUser(0.0, 1.0);
+	h_survival_pizeros->Draw();
+
+	TCanvas *cSurvivalPhotons = new TCanvas("cSurvivalPhotons", "cSurvivalPhotons", 600, 600);
+	formatHistograms(h_survival_photons, "p_{T} [GeV/c]", "Survival Rate for Electrons from #gamma", " ");
+	h_survival_photons->GetYaxis()->SetRangeUser(0.0, 1.0);
+	h_survival_photons->Draw();
+
+	TCanvas *cSurvivalEtas = new TCanvas("cSurvivalEtas", "cSurvivalEtas", 600, 600);
+	formatHistograms(h_survival_etas, "p_{T} [GeV/c]", "Survival Rate for Electrons from #eta", " ");
+	h_survival_etas->GetYaxis()->SetRangeUser(0.0, 1.0);
+	h_survival_etas->Draw();
+
+	if (savePlots)
+	{
+		cSurvivalPizeros->SaveAs("Plots/SurvivalPizeros.pdf");
+		cSurvivalEtas->SaveAs("Plots/SurvivalEtas.pdf");
+		cSurvivalPhotons->SaveAs("Plots/SurvivalPhotons.pdf");
+	}
+}
+
+
+void plotDataElectrons()
+{
+	TCanvas *cElectrons = new TCanvas("cElectrons", "cElectrons", 600, 600);
+	cElectrons->SetLogy();
+	formatHistograms(h_elec_pT_inclusive, "p_{T} [GeV/c]", "dN_{e}/dp_{T}", " ");
+	h_elec_pT_inclusive->Draw();
+
+	TCanvas *cIsolatedElectrons = new TCanvas("cIsolatedElectrons", "cIsolatedElectrons", 600, 600);
+	cIsolatedElectrons->SetLogy();
+	formatHistograms(h_elec_pT_isolated, "p_{T} [GeV/c]", "dN_{e}^{iso}/dp_{T}", " ");
+	h_elec_pT_isolated->Draw();
+}
+
+
+void saveFiles()
+{
+	TFile *fout = new TFile("fnp_plots.root", "RECREATE");
+	h_FNP->Write();
+	h_FNP_conv->Write();
+	h_conversion_efficiency->Write();
+	h_survival_pizeros->Write();
+	h_survival_photons->Write();
+	h_survival_etas->Write();
+}
+*/
+
+
+void plotConversionEfficiency()
+{
+	//All photonic electrons
+	TCanvas *cPhotonicEfficiency = new TCanvas("cPhotonicEfficiency", "cPhotonicEfficiency", 600, 600);
+	formatHistograms(h_conversion_efficiency[0], "p_{T} [GeV/c]", "Survival Rate for Photonic Electrons", " ");
+
+	h_conversion_efficiency[0]->SetMarkerColor(kRed);
+	h_conversion_efficiency[0]->SetLineColor(kRed);
+	h_conversion_efficiency[0]->SetMarkerStyle(20);
+	h_conversion_efficiency[0]->SetMarkerSize(0.7);
+
+	h_conversion_efficiency[0]->GetYaxis()->SetRangeUser(0.0, 1.0);
+	h_conversion_efficiency[0]->Draw("P");
+
+	//cPhotonicEfficiency->SaveAs(Form("h_survival_photonic_%i.pdf",vetoLayers));
+
+	//Conversion electrons
+	TCanvas *cSurvivalConversion = new TCanvas("cSurvivalConversion", "cSurvivalConversion", 600, 600);
+	formatHistograms(h_survival_conversion, "p_{T} [GeV/c]", "Survival Rate for Conversion Electrons", " ");
+
+	h_survival_conversion->SetMarkerColor(kRed);
+	h_survival_conversion->SetLineColor(kRed);
+	h_survival_conversion->SetMarkerStyle(20);
+	h_survival_conversion->SetMarkerSize(0.7);
+
+	h_survival_conversion->GetYaxis()->SetRangeUser(0.0, 1.0);
+	h_survival_conversion->Draw("P");
+
+	//cSurvivalConversion->SaveAs(Form("h_survival_conversion_%i.pdf", vetoLayers));
+
+	//Dalitz electrons
+	TCanvas *cSurvivalDalitz = new TCanvas("cSurvivalDalitz", "cSurvivalDalitz", 600, 600);
+	formatHistograms(h_survival_dalitz, "p_{T} [GeV/c]", "Survival Rate for Dalitz Electrons", " ");
+
+	h_survival_dalitz->SetMarkerColor(kRed);
+	h_survival_dalitz->SetLineColor(kRed);
+	h_survival_dalitz->SetMarkerStyle(20);
+	h_survival_dalitz->SetMarkerSize(0.7);
+
+	h_survival_dalitz->GetYaxis()->SetRangeUser(0.0, 1.0);
+	h_survival_dalitz->Draw("P");
+
+	//cSurvivalDalitz->SaveAs(Form("h_survival_dalitz_%i.pdf", vetoLayers));
+}
+
+
+void plotSystematicRatio()
+{
+	TCanvas *cRatio = new TCanvas("cRatio", "Ratio - No Veto Cut", 1000, 600);
+
+	formatHistograms(h_FNP_default_ratios[0], "p_{T} [GeV/c]", "Ratio to Default F_{NP}", "");
+
+	h_rms_minus->SetLineColor(kBlack);
+	h_rms_minus->SetLineWidth(5);
+
+	h_rms_plus->SetLineColor(kBlack);
+	h_rms_plus->SetLineWidth(5);
+
+	h_FNP_default_ratios[0]->Draw("HIST");
+	h_FNP_default_ratios[0]->GetYaxis()->SetRangeUser(0.8, 1.2);
+	h_FNP_default_ratios[0]->SetMarkerColor(kRed);
+	h_FNP_default_ratios[0]->SetLineColor(kRed - 9);
+	h_FNP_default_ratios[0]->SetMarkerStyle(20);
+	h_FNP_default_ratios[0]->SetMarkerSize(0.4);
+
+	TLegend *legRatio = new TLegend(0.3, 0.15, 0.85, 0.40);
+	legRatio->SetLineColor(kWhite);
+
+	legRatio->Draw("same");
+
+	for (int i = 1; i < NUMFNPS; i++)
+	{
+		h_FNP_default_ratios[i]->Draw("HIST,same");
+
+		//Set various photon variations in different colors
+		int photonIndex = getPhotonIndex(i);
+		int pionIndex = getPionIndex(i);
+		int etaIndex = getEtaIndex(i);
+
+		if (colorCodeVariation == 0)
+		{
+			if (photonIndex == 0)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kBlue);
+			}
+			else if (photonIndex == 1)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kSpring - 1);
+			}
+			else if (photonIndex == 2)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kViolet);
+			}
+			else
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kOrange - 3);
+			}
+		}
+
+		if (colorCodeVariation == 1)
+		{
+			if (pionIndex == 0)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kViolet);
+			}
+			else if (pionIndex == 1)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kOrange - 3);
+			}
+			else if (pionIndex == 2)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kSpring - 1);
+			}
+		}
+
+		if (colorCodeVariation == 2)
+		{
+			if (etaIndex == 0)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kViolet);
+			}
+			else if (etaIndex == 1)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kOrange - 3);
+			}
+			else if (etaIndex == 2)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kSpring - 1);
+			}
+			else if (etaIndex == 3)
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kAzure + 7);
+			}
+			else
+			{
+				h_FNP_default_ratios[i]->SetLineColor(kPink + 10);
+			}
+		}
+	}
+
+	h_rms_minus->Draw("hist,same");
+	h_rms_plus->Draw("hist,same");
+}
+
+void fitFNP()
+{
+	//Fit FNP to a form A(1-exp(-Bx))
+	f_fnp_fit_without_veto = new TF1("f_fnp_fit_without_veto", "[0]*(1.0 - TMath::Exp(-1*[1]*x)) + [2]", 1.25, 9.0);
+	f_fnp_fit_without_veto->SetParameter(0, 9.25538e-01);
+	f_fnp_fit_without_veto->SetParameter(1, 4.53362e-01);
+	f_fnp_fit_without_veto->SetParameter(2, -1.98153e-01);
+	g_eff_FNP[0]->Fit(f_fnp_fit_without_veto, "Q0R");
+
+	f_fnp_fit_with_veto = new TF1("f_fnp_fit_with_veto", "[0]*(1.0 - TMath::Exp(-1*[1]*x)) + [2]", 1.25, 9.0);
+	f_fnp_fit_with_veto->SetParameter(0, 1.33944e+00);
+	f_fnp_fit_with_veto->SetParameter(1, 8.02921e-01);
+	f_fnp_fit_with_veto->SetParameter(2, -4.59203e-01);
+	g_eff_FNP_conv[0]->Fit(f_fnp_fit_with_veto, "Q0R");
+}
+
+
+void printFNP(int index)
+{
+	/*
+	for (int i = 1; i <= h_FNP[index]->GetNbinsX(); i++)
+	{
+		cout << "pT = " << h_FNP_conv[index]->GetBinCenter(i) << "; FNP = " << h_FNP_conv[index]->GetBinContent(i) << endl;
+	}
+	*/
+
+	//Print epsilon_I, epsilon_R, Ne, Neveto, FNP for one pT bin
+	cout << "Epsilon_I = " << h_conversion_efficiency[0]->GetBinContent(1) << endl;
+	cout << "Epsilon_R = " << h_killed_efficiency->GetBinContent(1) << endl;
+	cout << "Ne        = " << h_elec_pT_inclusive->GetBinContent(1) << endl;
+	cout << "Ne veto   = " << h_elec_pT_isolated->GetBinContent(1) << endl;
+	cout << "NP        = " << h_P[0]->GetBinContent(1) << endl;
+	cout << "NNP       = " << h_NP[0]->GetBinContent(1) << endl;
+	cout << "FNP       = " << h_FNP[0]->GetBinContent(1) << endl;
+
+}
+
+
+void saveFiles()
+{
+	//Save photonic normalizations
+	TFile *fNorm = new TFile("NormalizationFactors.root", "RECREATE");
+	h_normalization_pizero->Write();
+	h_normalization_eta->Write();
+	h_normalization_photon->Write();
+	h_norm_ke3->Write();
+	h_norm_jpsi->Write();
+	fNorm->Close();
+}
+
+
+void calculateSystematicsFNP()
+{
+	readFiles();
+	//setSimErrorsToZero();
+	rebinHistograms();
+	defineSpectra();
+	calculateSpeciesSurvival();
+	calculateConversionEfficiencyAndRCP();
+	calculateRandomlyKilledEfficiency();
+	getCleanElectronSample();
+	getFNP();
+	getAsymmRMS();
+	getRatiosToDefault();
+	getPhotonicNormalizationFactors();
+	fitFNP();
+	printFNP(0);
+
+	//Calculate NP normalization
+	readCocktailFiles();
+	createHFgraph();
+	fitHFgraph();
+	getNonPhotonicNormalizationFactors();
+
+	gStyle->SetOptStat(0);
+	gStyle->SetErrorX(0);
+	//plotSpeciesSurival();
+	plotConversionEfficiency();
+	plotKilledEfficiency();
+	//plotDataElectrons();
+	plotFNPwRatio();
+	//plotRCP();
+	//plotNonPhotonicComponents();
+	//plotNormalization();
+	//plotSystematicRatio();
+	//saveFiles();
+}
